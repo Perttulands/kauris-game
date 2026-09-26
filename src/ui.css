@@ -4,3 +4,22 @@
 #muteButton{position:absolute;left:25px;top:244px;pointer-events:auto;padding:7px;border-radius:50%;background:#f7efdfe8}#muteButton svg{width:27px;height:27px}#friendButton{position:absolute;right:25px;bottom:245px;pointer-events:auto;display:flex;gap:6px;align-items:center;background:#ffe9b2;border:3px solid #e0b65f;padding:12px;box-shadow:0 4px 0 #816e3f77}#friendButton svg{width:42px;height:42px}#wardrobe{position:fixed;inset:0;background:#173d31e8;backdrop-filter:blur(6px);display:grid;place-items:center;padding:24px;overflow:auto}.wardrobePanel{max-width:780px;width:100%;background:var(--cream);color:var(--ink);border:3px solid #d4dcae;border-radius:28px;padding:22px}#outfitCards{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}.outfitCard{background:linear-gradient(#dce8ce,#fff4dc);min-width:0;padding:10px}.outfitCard .modelPicture{height:230px}.outfitCard.chosen{border:3px solid #699550;background:#fff0b9}.seedLocked{opacity:.6;cursor:default}.seedLocked .modelPicture{filter:grayscale(.6)}#reward .modelPicture{width:84px;height:90px}@media(max-width:760px){#outfitCards{grid-template-columns:repeat(2,1fr)}.outfitCard .modelPicture{height:190px}#muteButton{left:15px;top:240px}#friendButton{right:16px;bottom:252px}.wardrobePanel{padding:16px}#wardrobeTitle{font-size:24px}#seedCards{grid-template-columns:repeat(3,1fr)}}
 
 #swimCue{position:absolute;left:50%;top:90px;transform:translateX(-50%);display:flex;align-items:center;gap:10px;padding:7px 14px;border-radius:20px;background:#e4f4eaeD;color:#235e60;border:2px solid #a3d0c5;box-shadow:0 4px 15px #104b5a28;font-size:13px}#swimCue svg{width:38px;height:38px;vertical-align:middle}#swimCue span{display:flex;align-items:center;gap:7px}#swimCue kbd{font:600 13px inherit;background:#fff8dd;padding:4px 7px;border-radius:6px}@media(max-width:760px){#swimCue{top:300px;padding:5px 10px}#swimCue svg{width:32px;height:32px}}
+
+/* Context takes one corner; the centre stays open for the world and its people. */
+#hud.building #journal,#hud.inOcean #journal{display:none}
+#houseCue{top:96px;bottom:auto;left:25px;transform:none;gap:5px;padding:6px}
+#houseCue>span{width:55px}#houseCue img{width:47px;height:40px}#houseCue>svg{width:34px;height:34px}
+#buildActions{left:25px;bottom:140px;transform:none;display:grid;grid-template-columns:repeat(2,48px);gap:6px}
+#buildActions button{padding:7px;width:48px;height:45px}#buildActions svg{width:29px;height:29px}
+#hud.building #targetCue{left:25px;top:auto;bottom:245px;transform:none;padding:3px;min-width:0;background:#f8f0dccc;border-width:1px}
+#hud.building #targetCue .progressRing{width:30px;height:30px}#hud.building #targetCue .progressRing svg{width:24px;height:24px}
+#hud.building #targetLabel{left:25px;top:auto;bottom:287px;transform:none;text-align:left;font-size:10px;max-width:180px}
+#toast{top:auto;bottom:250px;left:25px;transform:none;max-width:255px;font-size:12px;padding:9px 12px}
+#reward{top:210px;left:auto;right:25px;transform:none;gap:8px;padding:9px 12px}#reward svg{width:32px;height:32px}
+.residentCue{transform:translate(24px,-100%);padding:3px;border-width:1px;border-radius:8px;box-shadow:none}.residentCue svg{width:23px;height:23px}
+#swimCue{left:25px;top:96px;transform:none;padding:6px 10px}#hud.building #swimCue{top:200px}#swimCue svg{width:30px;height:30px}
+@media(max-width:760px){#houseCue{left:15px;top:90px}#buildActions{left:15px;bottom:142px}#toast{left:15px;bottom:255px;max-width:230px}#swimCue{left:15px;top:90px}#hud.building #swimCue{top:192px}#reward{right:15px;top:218px}}
+
+@media(max-width:760px){#hud.building #targetCue,#hud.building #targetLabel{left:15px}}
+
+#hud.building:has(#toast.show) #targetCue,#hud.building:has(#toast.show) #targetLabel{visibility:hidden}

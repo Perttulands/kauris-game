@@ -14,7 +14,8 @@ import {createAudio} from './audio.js';
 import {TERRAIN,terrainHeight,inWorld,buildBase} from './terrain.js';
 import {wallLike,baseOf,canonicalPiece,adjacentCells,buildingBoxes as boxes,touches} from './building.js';
 import {swimmingAt,verticalStep} from './movement.js';
-import {createOceanWorld,createMarineAnimal,animateMarineAnimal} from './ocean-visuals.js';
+import {reefBlocked,reefFloor,reefCeiling,reefSafeFeet} from './reef-collision.js';
+import {createOceanWorld,createReefCover,createMarineAnimal,animateMarineAnimal} from './ocean-visuals.js';
 import {createMeadowCover,animateMeadowCover} from './meadow-visuals.js';
 import './ui.css';
 const $=id=>document.getElementById(id), canvas=$('game');
@@ -25,11 +26,11 @@ renderer.setPixelRatio(Math.min(devicePixelRatio,1.6));renderer.setSize(innerWid
 const scene=new THREE.Scene();scene.background=new THREE.Color('#b7d7d7');scene.fog=new THREE.Fog('#b7d7d7',38,118);
 const camera=new THREE.PerspectiveCamera(68,innerWidth/innerHeight,.05,180);camera.rotation.order='YXZ';scene.add(camera);
 const hemi=new THREE.HemisphereLight('#dceceb','#5f7466',1.5);scene.add(hemi);
-const sun=new THREE.DirectionalLight('#fff3df',2.0);sun.position.set(-24,38,16);sun.castShadow=true;sun.shadow.mapSize.set(2048,2048);Object.assign(sun.shadow.camera,{left:-36,right:36,top:36,bottom:-36,near:1,far:110});sun.shadow.normalBias=.025;sun.shadow.bias=-.0002;scene.add(sun);
+const sun=new THREE.DirectionalLight('#fff3df',2.0);sun.position.set(-24,38,16);sun.castShadow=true;sun.shadow.mapSize.set(2048,2048);Object.assign(sun.shadow.camera,{left:-24,right:24,top:24,bottom:-24,near:1,far:110});sun.shadow.normalBias=.025;sun.shadow.bias=-.0002;scene.add(sun,sun.target);
 const pictures=createPictures(renderer);
 const picture=(key,label)=>`<img class="modelPicture" src="${pictures[key]}" alt="${label}" draggable="false">`;
 const world=createWorld({occupiedCells:[...Object.values(state.plots),...state.buildings,...activeDiscoveries(state).flatMap(d=>{const cells=[];for(let gx=Math.floor(d.bounds.minX/2);gx<=Math.ceil(d.bounds.maxX/2);gx++)for(let gz=Math.floor(d.bounds.minZ/2);gz<=Math.ceil(d.bounds.maxZ/2);gz++)cells.push({gx,gz});return cells;})],hiddenLandmarks:state.worldHidden});scene.add(world.group);
-const ocean=createOceanWorld({terrain:TERRAIN,heightAt:terrainHeight});scene.add(ocean);
+const ocean=createOceanWorld({terrain:TERRAIN,heightAt:terrainHeight});scene.add(ocean);const reefSolids=ocean.userData.reefSolids;
 // A separate invisible ray surface shares the same sampled height as ocean scenery.
 const seabedGeo=new THREE.PlaneGeometry(53.3,39,54,78).rotateX(-Math.PI/2).translate(0,0,46.5);
 const seabedPos=seabedGeo.attributes.position;for(let i=0;i<seabedPos.count;i++)seabedPos.setY(i,terrainHeight(seabedPos.getX(i),seabedPos.getZ(i)));seabedGeo.computeVertexNormals();
@@ -37,12 +38,13 @@ const seabed=new THREE.Mesh(seabedGeo,new THREE.MeshBasicMaterial({visible:false
 const waterSurface=new THREE.Mesh(new THREE.PlaneGeometry(500,500).rotateX(-Math.PI/2),new THREE.MeshPhysicalMaterial({color:'#58bdbe',roughness:.23,metalness:.08,transparent:true,opacity:.48,depthWrite:false,side:THREE.DoubleSide}));waterSurface.position.set(0,TERRAIN.waterY,0);scene.add(waterSurface);
 const seaLight=new THREE.HemisphereLight('#b5eee5','#27616a',.65);seaLight.position.set(0,0,52);scene.add(seaLight);
 const marine=[];for(let i=0;i<12;i++){const model=createMarineAnimal('fish',i%2);model.position.set((i%3-1)*6,-4.7,48+Math.floor(i/3)*3);scene.add(model);marine.push({model,index:i});}
-let cover=null,coverKey='';
+let cover=null,reefCover=null,coverKey='';
 function syncCover(){
  const excludedCells=[...Object.values(state.plots),...state.buildings.flatMap(adjacentCells),...activeDiscoveries(state).flatMap(d=>{const a=[];for(let gx=Math.floor(d.bounds.minX/2);gx<=Math.ceil(d.bounds.maxX/2);gx++)for(let gz=Math.floor(d.bounds.minZ/2);gz<=Math.ceil(d.bounds.maxZ/2);gz++)a.push({gx,gz});return a;})];
  const key=excludedCells.map(p=>`${p.gx},${p.gz}`).sort().join(';');if(key===coverKey&&cover)return;coverKey=key;
  if(cover){scene.remove(cover);const materials=new Set();cover.traverse(o=>{if(o.isMesh&&cover.userData.privateResources){o.geometry.dispose();materials.add(o.material);}});materials.forEach(m=>m.dispose());}
- cover=createMeadowCover({excludedCells});scene.add(cover);
+ if(reefCover){scene.remove(reefCover);const materials=new Set();reefCover.traverse(o=>{if(o.isMesh&&reefCover.userData.privateResources){o.geometry.dispose();materials.add(o.material);}});materials.forEach(m=>m.dispose());}
+ cover=createMeadowCover({excludedCells});scene.add(cover);reefCover=createReefCover({terrain:TERRAIN,heightAt:terrainHeight,excludedCells});scene.add(reefCover);
 }
 // One continuous meadow map spans all cells; digging only lowers the existing tile.
 // Broad turf variation and a few worn patches avoid repeating a texture per block.
@@ -99,12 +101,13 @@ const tools=[{key:'shovel',name:'Dig',icon:'♧'},{key:'seed',name:'Seeds',icon:
 let fallbackLook=false,rightDrag=false;
 let tool=0,seedIndex=0,pieceIndex=0,materialIndex=0,rotation=0,level=0,toolMesh,preview;
 const seedKeys=Object.keys(SEEDS),pieceKeys=Object.keys(PIECES);
-let yaw=state.player.yaw,pitch=state.player.pitch,feet=state.player.y??0,vy=0,locked=false,held=false,catalogOpen=false,started=false,dirty=false,lastSave=0,elapsed=0,target=null,swing=0,toastUntil=0;
+let yaw=state.player.yaw,pitch=state.player.pitch,feet=reefSafeFeet(reefSolids,state.player.x,state.player.z,state.player.y??0),vy=0,locked=false,held=false,catalogOpen=false,started=false,dirty=false,lastSave=0,elapsed=0,target=null,swing=0,toastUntil=0;
 const pos=new THREE.Vector3(state.player.x,0,state.player.z),keys=new Set();
 const waterPositions=new Float32Array(28*3),waterGeometry=new THREE.BufferGeometry();waterGeometry.setAttribute('position',new THREE.BufferAttribute(waterPositions,3));
-const stream=new THREE.Points(waterGeometry,new THREE.PointsMaterial({color:'#c5faff',size:.055,transparent:true,opacity:.95}));stream.frustumCulled=false;stream.visible=false;scene.add(stream);
+const dropCanvas=document.createElement('canvas');dropCanvas.width=dropCanvas.height=32;const dc=dropCanvas.getContext('2d'),dg=dc.createRadialGradient(16,16,1,16,16,15);dg.addColorStop(0,'#ffffff');dg.addColorStop(.45,'#ffffffdd');dg.addColorStop(1,'#ffffff00');dc.fillStyle=dg;dc.fillRect(0,0,32,32);
+const stream=new THREE.Points(waterGeometry,new THREE.PointsMaterial({color:'#c5faff',size:.024,map:new THREE.CanvasTexture(dropCanvas),transparent:true,opacity:.85,depthWrite:false}));stream.frustumCulled=false;stream.visible=false;scene.add(stream);
 const sparks=[],falling=[];const audio=createAudio();let garden;let outfitResident=null;let nearestFriend=null;
-let residents;
+let residents,pourWeight=0,swimHudMode=null;
 const chop={},wheel={};let chopProgress=0,totalImpacts=0,rewardUntil=0,failureUntil=0,lastCue="";
 function resetActions(){held=false;advanceChop(chop,null,0);chopProgress=0;wheelStep(wheel,0,0,0,false);}
 function toast(text){$('toast').textContent=text;toastUntil=elapsed+3;$('toast').classList.add('show');}
@@ -150,7 +153,7 @@ function selectedBuild(){
 function rotateChoice(){rotation=(rotation+1)%(wallLike({kind:pieceKeys[pieceIndex]})?2:4);updateHUD();}
 function intersectsPlayer(b){return boxes(b).some(a=>touches(a,pos.x,pos.z)&&a.maxY>feet+.3&&a.minY<feet+1.65);}
 function canWalk(x,z){
- if(!inWorld(x,z))return false;
+ if(!inWorld(x,z)||reefBlocked(reefSolids,x,z,feet))return false;
  for(const b of state.buildings)for(const a of boxes(b))if(touches(a,x,z)&&a.maxY>feet+.31&&a.minY<feet+1.65)return false;
  for(const p of Object.values(state.plots))if(p.growth>.3&&!isFlower(p.seed)&&Math.hypot(x-p.gx*2,z-p.gz*2)<.24+.2*p.growth)return false;
  for(const r of liveWild(state))if(!isFlower(r.kind)&&Math.hypot(x-r.gx*2,z-r.gz*2)<.6)return false;
@@ -158,7 +161,7 @@ function canWalk(x,z){
  return true;
 }
 function residentCanStand(x,z,baseY=0){
- if(!inWorld(x,z)||Math.abs(terrainHeight(x,z)-baseY)>.25)return false;
+ if(!inWorld(x,z)||Math.abs(terrainHeight(x,z)-baseY)>.25||reefBlocked(reefSolids,x,z,baseY,{radius:.31,height:1.7,step:.3}))return false;
  const floor=state.buildings.some(b=>b.kind==='floor'&&baseOf(b)===baseY&&b.level===0&&Math.abs(x-b.gx*2)<1&&Math.abs(z-b.gz*2)<1);
  if(!floor&&state.plots[cellKey(Math.round(x/2),Math.round(z/2))]?.phase==='hole')return false;
  for(const b of state.buildings)for(const a of boxes(b))if(touches(a,x,z,.31)&&a.maxY>baseY+.3&&a.minY<baseY+1.7)return false;
@@ -169,12 +172,13 @@ function residentCanStand(x,z,baseY=0){
 }
 function residentFloor(x,z,baseY=0){return state.buildings.some(b=>b.kind==='floor'&&baseOf(b)===baseY&&b.level===0&&Math.abs(x-b.gx*2)<1&&Math.abs(z-b.gz*2)<1)?baseY+.15:terrainHeight(x,z);}
 function floorAt(x,z){let f=state.plots[cellKey(Math.round(x/2),Math.round(z/2))]?.phase==='hole'?-.6:terrainHeight(x,z);
- for(const b of state.buildings)if(b.kind==='floor'||b.kind==='roof')for(const a of boxes(b))if(touches(a,x,z,.1)&&a.maxY<=feet+.31)f=Math.max(f,a.maxY);return f;}
+ for(const b of state.buildings)if(b.kind==='floor'||b.kind==='roof')for(const a of boxes(b))if(touches(a,x,z,.1)&&a.maxY<=feet+.31)f=Math.max(f,a.maxY);return reefFloor(reefSolids,x,z,feet,f);}
 function placeTool(){if(toolMesh)toolMesh.position.set(Math.min(.43,Math.tan(camera.fov*Math.PI/360)*.72*camera.aspect*(camera.aspect<1?.4:.76)),camera.aspect<1?-.31:-.42,-.72);}
 function chooseTool(i){resetActions();tool=i;swing=0;if(toolMesh)camera.remove(toolMesh);toolMesh=createTool(tools[i].key);toolMesh.scale.setScalar(i===3?.38:.55);placeTool();toolMesh.rotation.set(-.12,-.22,-.08);camera.add(toolMesh);if(preview){scene.remove(preview);preview.traverse(o=>{if(o.isMesh)o.material.dispose();});preview=null;}if(tool===5){preview=createBuildPiece(pieceKeys[pieceIndex],MATERIALS[materialIndex]);preview.traverse(o=>{if(o.isMesh){o.material=new THREE.MeshBasicMaterial({color:'#e1f4a9',transparent:true,opacity:.4,depthWrite:false});o.castShadow=false;}});scene.add(preview);}updateHUD();}
 function cycle(delta){if(tool===5){pieceIndex=(pieceIndex+delta+pieceKeys.length)%pieceKeys.length;level=pieceKeys[pieceIndex]==='roof'?1:0;}else{do{seedIndex=(seedIndex+delta+seedKeys.length)%seedKeys.length;}while(!seedUnlocked(state,seedKeys[seedIndex]));if(tool!==1)tool=1;}chooseTool(tool);}
 function browse(delta){if(tool===1||tool===5)cycle(delta);else chooseTool((tool+delta+tools.length)%tools.length);}
 function updateHUD(){
+ $('hud').classList.toggle('building',tool===5||tool===6);
  $('resources').innerHTML=Object.entries(state.inventory).map(([k,v])=>`<div class="resource" title="${k}" aria-label="${v} ${k}">${icon(k)}<span>${k}</span><b>${v}</b></div>`).join('');
  $('toolbar').innerHTML=tools.map((t,i)=>`<button class="${i===tool?'active':''}" data-tool="${i}" aria-label="${t.name}" aria-pressed="${i===tool}"><small>${i+1}</small><span class="toolPic">${['seed','fill','build','remove'].includes(t.key)?icon(t.key):picture('tool:'+t.key,t.name)}</span>${t.name}</button>`).join('');
  $('toolbar').querySelectorAll('button').forEach(b=>b.onclick=()=>chooseTool(Number(b.dataset.tool)));
@@ -203,7 +207,7 @@ function updateJournal(){
  else if(state.stats.planted>0){
   const planted=Object.values(state.plots).filter(p=>p.seed),aimed=target&&state.plots[cellKey(target.gx,target.gz)];
   if(aimed?.growth>=1||planted.every(p=>p.growth>=1)){title='Your harvest is ready.';detail='Choose the axe [5] and click a mature plant.';}
-  else if(planted.some(p=>p.phase==='hole')){title='Tuck your seed into the soil.';detail='Choose fill [3], then hold the hose [4].';}
+  else if(planted.some(p=>p.phase==='hole')){title='Tuck your seed into the soil.';detail='Choose fill [3], then hold the watering can [4].';}
   else if(planted.some(p=>p.growth<1&&p.water<.2)){title='Give your seed a little water.';detail='Hold the watering can [4] on the soil until it is well watered.';}
   else{title='Watch your garden grow.';detail='Keep soil moist. Harvest [5] when fully grown.';}
  }
@@ -289,7 +293,7 @@ function pick(){
   if(target.outOfReach)label='Walk closer';
   else if(target.wildId){const r=WILD_RESOURCES.find(r=>r.id===target.wildId);label=tool===4?(isFlower(r.kind)?'Hold to gather flowers':'Hold to chop · three impacts'):'Wild '+SEEDS[r.kind].name+' · choose the axe';}
   else
-  if(tool===5){const b=selectedBuild(),v=validateBuild(state,b);label=v.ok?(intersectsPlayer(b)?'Step aside to place this piece.':`Click · place ${PIECES[b.kind].name.toLowerCase()}\n${PIECES[b.kind].cost} ${b.material}`):v.message;}
+  if(tool===5){const b=selectedBuild(),v=validateBuild(state,b);label=v.ok?(intersectsPlayer(b)?'Step aside to place this piece.':''):v.message;}
   else if(tool===6)label=target.buildId?'Click · remove and refund':'Aim at a building piece';
   else if(p?.seed)label=`${SEEDS[p.seed].name} · ${p.phase==='hole'?'seed — fill the hole [3]':p.growth>=1?'mature — harvest [5]':`${Math.floor(p.growth*100)}% grown · ${Math.round(p.water*100)}% water`}\n${p.phase==='filled'&&p.growth<1?(p.water<.2?'Hold watering can [4] to keep growing':'Growing…'):''}`;
   else label=p?.phase==='hole'?'Open hole · sow a seed [2]':tool===0?'Click · dig a planting hole':tool===1?'Dig a hole first [1]':'';
@@ -321,8 +325,8 @@ function addEffect(m,x,y,z,life,v,bounce=false,ring=false){
  m.position.set(x,y,z);scene.add(m);sparks.push({m,life,v,bounce,ring});
 }
 function clearEffects(){for(const s of sparks){scene.remove(s.m);s.m.geometry.dispose();s.m.material.dispose();}sparks.length=0;for(const f of falling)scene.remove(f.g);falling.length=0;stream.visible=false;}
-function burst(gx,gz,c='#d9be78'){
- for(let i=0;i<10;i++){const m=new THREE.Mesh(new THREE.BoxGeometry(.07,.055,.16),new THREE.MeshStandardMaterial({color:c,roughness:.8}));addEffect(m,gx*2,.45,gz*2,.8,new THREE.Vector3((Math.random()-.5)*3,Math.random()*2+1,(Math.random()-.5)*3));}
+function burst(gx,gz,c='#d9be78',baseY=0){
+ for(let i=0;i<10;i++){const m=new THREE.Mesh(new THREE.BoxGeometry(.07,.055,.16),new THREE.MeshStandardMaterial({color:c,roughness:.8}));addEffect(m,gx*2,baseY+.45,gz*2,.8,new THREE.Vector3((Math.random()-.5)*3,Math.random()*2+1,(Math.random()-.5)*3));}
 }
 function splash(x,z){
  const m=new THREE.Mesh(new THREE.RingGeometry(.07,.10,16),new THREE.MeshBasicMaterial({color:'#c9f7ef',transparent:true,opacity:.7,side:THREE.DoubleSide,depthWrite:false}));m.rotation.x=-Math.PI/2;addEffect(m,x,.06,z,.6,new THREE.Vector3(),false,true);
@@ -339,10 +343,10 @@ function act(){
  if(tool===0)result=dig(state,gx,gz);if(tool===1)result=plant(state,gx,gz,seedKeys[seedIndex]);if(tool===2)result=fill(state,gx,gz);
  if(tool===5){const b=selectedBuild();result=intersectsPlayer(b)?{ok:false,message:'Step aside to place this piece.'}:build(state,b);}
  if(tool===6)result=remove(state,target.buildId);
- if(result){if(!result.ok)failureUntil=elapsed+.8;toast(result.message);if(result.ok){dirty=true;swing=.25;audio.play(['dig','plant','fill','water','harvest','build','remove'][tool]);burst(gx,gz);sync();save();}}
+ if(result){if(!result.ok)failureUntil=elapsed+.8;toast(result.message);if(result.ok){dirty=true;swing=.25;audio.play(['dig','plant','fill','water','harvest','build','remove'][tool]);burst(gx,gz,undefined,target.baseY??0);sync();save();}}
 }
 function resize(){camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);placeTool();}window.addEventListener('resize',resize);
-residents=createResidentSystem({scene,getState:()=>state,getPlayer:()=>pos,canStand:residentCanStand,floorHeight:residentFloor,changed:()=>{dirty=true;},notice:()=>{audio.play('discover');$('reward').innerHTML=icon('resident')+icon('build')+icon('check');rewardUntil=elapsed+4;$('reward').classList.add('show');toast(pos.z>30?'A friendly diver is moving in.':'A friendly neighbour is moving in.');}});
+residents=createResidentSystem({scene,getState:()=>state,getPlayer:()=>pos,canStand:residentCanStand,floorHeight:residentFloor,changed:()=>{dirty=true;},notice:r=>{audio.play('discover');toast(r.habitat==='ocean'?'A friendly diver is moving in.':'A friendly neighbour is moving in.');}});
 garden=createGardenSystem({scene,getState:()=>state,getPlayer:()=>pos,canStand:(x,z)=>residentCanStand(x,z)&&!state.buildings.some(b=>Math.abs(x-b.gx*2)<1.7&&Math.abs(z-b.gz*2)<1.7),treeHeight:key=>plantMeshes.get(key)?.userData.perchHeight??3.5,onDiscover:r=>{dirty=true;audio.play('discover');$('reward').innerHTML=icon('sparkle')+picture('seed:'+r.seed,SEEDS[r.seed].name)+icon('check');rewardUntil=elapsed+5;$('reward').classList.add('show');toast(r.newSeed?'A new seed for your picture book!':'Another secret found!');burst(Math.round(pos.x/2),Math.round(pos.z/2),'#eddb90');updateHUD();save();}});
 setupPictures();setupLivingUI();sync();chooseTool(0);if(loadWarning){$('welcomeSave').textContent=loadWarning;$('saveStatus').textContent='Previous save could not be loaded';}
 const timing=[];let previous=performance.now(),frames=0,livingTime=0;
@@ -356,16 +360,18 @@ function frame(now){
   const wx=dx*Math.cos(yaw)+dz*Math.sin(yaw),wz=dz*Math.cos(yaw)-dx*Math.sin(yaw);
   if(canWalk(pos.x+wx,pos.z))pos.x+=wx;if(canWalk(pos.x,pos.z+wz))pos.z+=wz;
   const beforeFeet=feet;
-  const floor=floorAt(pos.x,pos.z),ceil=Math.min(Infinity,...state.buildings.flatMap(boxes).filter(a=>touches(a,pos.x,pos.z)&&a.minY>=feet+1.6).map(a=>a.minY));
+  const floor=floorAt(pos.x,pos.z),ceil=reefCeiling(reefSolids,pos.x,pos.z,feet,Math.min(Infinity,...state.buildings.flatMap(boxes).filter(a=>touches(a,pos.x,pos.z)&&a.minY>=feet+1.6).map(a=>a.minY)));
   const vertical=verticalStep({x:pos.x,z:pos.z,feet,vy,dt,forward:(keys.has('KeyW')?1:0)-(keys.has('KeyS')?1:0),pitch,rise:keys.has('Space'),dive:keys.has('KeyC')||keys.has('ControlLeft')||keys.has('ControlRight'),floor,ceil});feet=vertical.feet;vy=vertical.vy;
   if(dx||dz||feet!==beforeFeet||Object.values(state.plots).some(p=>p.growth<1&&p.water>0))dirty=true;
   for(const {model,index:i} of marine){const t=livingTime*(.23+(i%3)*.025)+i*.72,cx=(i%3-1)*6,cz=48+Math.floor(i/3)*3;model.position.set(cx+Math.sin(t)*3.6,-4.7+Math.sin(t*.8+i)*.65,cz+Math.cos(t)*2);model.rotation.y=Math.atan2(Math.cos(t)*3.6,-Math.sin(t)*2);animateMarineAnimal(model,{time:livingTime+i,swim:1});}
   if(cover)animateMeadowCover(cover,{time:livingTime});
 
  }
+ // Spend the shadow map on the nearby world, including ocean houses, not the whole distant orchard.
+ const shadowX=Math.round(pos.x/2)*2,shadowZ=Math.round(pos.z/2)*2,shadowY=terrainHeight(pos.x,pos.z);sun.target.position.set(shadowX,shadowY,shadowZ);sun.position.set(shadowX-24,shadowY+38,shadowZ+16);
  camera.position.set(pos.x,feet+1.7,pos.z);camera.rotation.set(pitch,yaw,0,'YXZ');camera.updateMatrixWorld();pick();
- const underwater=camera.position.y<TERRAIN.waterY;scene.background.set(underwater?'#5ba9b4':'#b7d7d7');scene.fog.color.copy(scene.background);scene.fog.near=underwater?8:38;scene.fog.far=underwater?48:118;waterSurface.material.opacity=underwater?.18:.48;
- $('swimCue').hidden=!locked||pos.z<23;$('swimCue').innerHTML=icon('swim')+(swimmingAt(pos.x,pos.z,feet)?`<span>↑ <kbd>Space</kbd> &nbsp; ↓ <kbd>C</kbd></span>`:`<span>${icon('reef')} ↓</span>`);
+ const underwater=camera.position.y<TERRAIN.waterY;$('hud').classList.toggle('inOcean',pos.z>30);scene.background.set(underwater?'#5ba9b4':'#b7d7d7');scene.fog.color.copy(scene.background);scene.fog.near=underwater?8:38;scene.fog.far=underwater?48:118;waterSurface.material.opacity=underwater?.18:.48;
+ const swimMode=!locked||pos.z<23?'hidden':swimmingAt(pos.x,pos.z,feet)?'swim':'shore';if(swimMode!==swimHudMode){swimHudMode=swimMode;$('swimCue').hidden=swimMode==='hidden';$('swimCue').innerHTML=icon('swim')+(swimMode==='swim'?`<span>↑ <kbd>Space</kbd> &nbsp; ↓ <kbd>C</kbd></span>`:`<span>${icon('reef')} ↓</span>`);}
  stream.visible=false;
  if(locked&&held&&tool===3&&target&&!target.outOfReach&&!target.wildId){const result=water(state,target.gx,target.gz,dt);if(result.ok){dirty=true;stream.visible=true;audio.play('water');if(frames%6===0)splash(target.gx*2,target.gz*2);const origin=new THREE.Vector3(...(toolMesh.userData.spout??[0,.2,-.2])).applyMatrix4(toolMesh.matrixWorld),end=new THREE.Vector3(target.gx*2,.12,target.gz*2);for(let i=0;i<28;i++){const t=((i/28)+elapsed*1.8)%1;const p=origin.clone().lerp(end,t);p.y+=Math.sin(t*Math.PI)*.35;waterPositions[i*3]=p.x;waterPositions[i*3+1]=p.y;waterPositions[i*3+2]=p.z;}waterGeometry.attributes.position.needsUpdate=true;}else if(frames%45===0)toast(result.message);}
  const plant=target&&state.plots[cellKey(target.gx,target.gz)],wild=target?.wildId&&WILD_RESOURCES.find(r=>r.id===target.wildId);
@@ -378,13 +384,13 @@ function frame(now){
  for(const [k,g] of plantMeshes)g.rotation.z=chopKey==='plot:'+k?Math.sin(chop.elapsed*28)*.025:0;
  for(let i=falling.length-1;i>=0;i--){const f=falling[i];f.life-=dt;f.g.rotation.z+=dt*1.7;f.g.scale.multiplyScalar(Math.max(0,1-dt*1.6));f.g.position.y-=dt*.3;if(f.life<=0){scene.remove(f.g);falling.splice(i,1);}}
  for(const [k,g] of plantMeshes){const p=state.plots[k];g.scale.setScalar(p.phase==='hole'?.28:1);animateTree(g,{growth:p.growth,time:elapsed,variation:p.variation??0});const stage=p.growth>=1?3:p.growth>=.65?2:p.growth>=.25?1:0;if(g.userData.lastStage!==undefined&&stage>g.userData.lastStage&&locked){audio.play('grow');burst(p.gx,p.gz,SEEDS[p.seed].color);}g.userData.lastStage=stage;}
- if(toolMesh){swing=Math.max(0,swing-dt);toolMesh.rotation.x=-.12-Math.sin(swing/.25*Math.PI)*(tool===4?1.2:.6);if(tool===3&&stream.visible)toolMesh.rotation.x=-.58;toolMesh.rotation.z=tool===4?-Math.sin(swing/.25*Math.PI)*.65:0;placeTool();toolMesh.position.y+=(locked&&(keys.has('KeyW')||keys.has('KeyS'))?Math.sin(elapsed*9)*.018:0);toolMesh.visible=locked;}
+ if(toolMesh){pourWeight+=((stream.visible?1:0)-pourWeight)*(1-Math.exp(-dt*10));swing=Math.max(0,swing-dt);toolMesh.rotation.x=-.12-Math.sin(swing/.25*Math.PI)*(tool===4?1.2:.6);if(tool===3)toolMesh.rotation.x-=pourWeight*.46;toolMesh.rotation.z=tool===4?-Math.sin(swing/.25*Math.PI)*.65:0;placeTool();toolMesh.position.y+=(locked&&(keys.has('KeyW')||keys.has('KeyS'))?Math.sin(elapsed*9)*.018:0);toolMesh.visible=locked;}
  for(let i=sparks.length-1;i>=0;i--){const s=sparks[i];s.life-=dt;if(s.ring){s.m.scale.addScalar(dt*1.5);s.m.material.opacity=Math.max(0,s.life);}else{s.v.y-=5*dt;s.m.position.addScaledVector(s.v,dt);s.m.rotation.x+=dt*3;if(s.bounce&&s.m.position.y<.16){s.m.position.y=.16;s.v.y=Math.abs(s.v.y)*.5;s.v.x*=.65;s.v.z*=.65;}if(s.bounce&&s.life<.3)s.m.scale.setScalar(Math.max(.01,s.life/.3));}if(s.life<=0){scene.remove(s.m);s.m.geometry.dispose();s.m.material.dispose();sparks.splice(i,1);}}
  if(frames%5===0){updateJournal();$('places').innerHTML=[...PLACES,{id:'reef',name:'Shell reef',x:TERRAIN.reef.x,z:TERRAIN.reef.z,icon:'reef'}].map(p=>{const distance=Math.hypot(pos.x-p.x,pos.z-p.z),angle=Math.atan2(-(p.x-pos.x),-(p.z-pos.z))-yaw;return `<div class="place ${distance<5?'near':''}" title="${p.name}" aria-label="${p.name}, ${Math.round(distance)} metres">${icon(p.icon)}<span class="bearing" style="transform:rotate(${-angle}rad)">↑</span><b>${distance<5?'✓':Math.round(distance)+'m'}</b></div>`;}).join('');}
  if(frames%5===0){
   const h=target&&houseReadiness(state.buildings,target.gx,target.gz,target.baseY??0);$('houseCue').hidden=!h||tool!==5&&tool!==6;
-  if(h){$('houseCue').innerHTML=`<span class="${h.doors.length?'ready':''}">${picture('piece:door:wood','Door')}${h.doors.length?icon('check'):icon('lock')}</span><span class="${h.covered===h.total?'ready':''}">${picture('piece:wall:wood','Enclosed walls')}<b>${h.covered}/${h.total}</b></span><span class="${h.roofCount===h.cells.length?'ready':''}">${picture('piece:roof:wood','Roof')}<b>${h.roofCount}/${h.cells.length}</b></span>${h.complete?icon('resident'):''}`;}
-  $('residentCues').innerHTML=(state.residents??[]).map(r=>{if(r.x===null)return '';const p=new THREE.Vector3(r.x,residentFloor(r.x,r.z,r.baseY??0)+1.95,r.z).project(camera);if(p.z<-1||p.z>1||Math.abs(p.x)>1.1||Math.abs(p.y)>1.1)return '';return `<div class="residentCue ${r.status}" style="left:${(p.x*.5+.5)*100}%;top:${(-p.y*.5+.5)*100}%" aria-label="Friendly resident ${r.status}">${icon('resident')}${icon(r.status==='waiting'?'build':r.status==='arriving'?'footsteps':'check')}</div>`;}).join('');
+  if(h){$('houseCue').innerHTML=h.complete?`${icon('build')}${icon('check')}`:`<span class="${h.doors.length?'ready':''}">${picture('piece:door:wood','Door')}${h.doors.length?icon('check'):icon('lock')}</span><span class="${h.covered===h.total?'ready':''}">${picture('piece:wall:wood','Enclosed walls')}<b>${h.covered}/${h.total}</b></span><span class="${h.roofCount===h.cells.length?'ready':''}">${picture('piece:roof:wood','Roof')}<b>${h.roofCount}/${h.cells.length}</b></span>${h.complete?icon('resident'):''}`;}
+  $('residentCues').innerHTML=(state.residents??[]).map(r=>{if(r.x===null||r.status==='home'||Math.hypot(r.x-pos.x,residentFloor(r.x,r.z,r.baseY??0)-feet,r.z-pos.z)>9)return '';const worldPoint=new THREE.Vector3(r.x,residentFloor(r.x,r.z,r.baseY??0)+1.8,r.z),direction=worldPoint.clone().sub(camera.position);if(new THREE.Raycaster(camera.position,direction.clone().normalize(),0,direction.length()-.2).intersectObjects([...buildMeshes.values()],true).length)return '';const p=worldPoint.project(camera);if(p.z<-1||p.z>1||Math.abs(p.x)>1.1||Math.abs(p.y)>1.1)return '';return `<div class="residentCue ${r.status}" style="left:${(p.x*.5+.5)*100}%;top:${(-p.y*.5+.5)*100}%" aria-label="Friendly resident ${r.status}">${icon(r.status==='waiting'?'build':'footsteps')}</div>`;}).join('');
  }
  if(frames%5===0)updateFriendButton();
  if(elapsed>rewardUntil)$('reward').classList.remove('show');

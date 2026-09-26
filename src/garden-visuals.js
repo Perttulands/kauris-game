@@ -36,6 +36,29 @@ function leafCushion(){
   const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(verts,3));g.computeVertexNormals();return g;
 }
 G.cushion=leafCushion();
+// Broadleaf crowns are overlapping leafy boughs, not closed rounded cushions.
+// The three uneven sprays have folded upper faces and distinct scalloped edges.
+function broadleafBough(birch){
+  const pieces=[],up=new THREE.Vector3(0,1,0);
+  const outline=birch?[[0,0],[-.24,.27],[-.36,.51],[-.23,.76],[0,1],[.23,.76],[.36,.51],[.24,.27]]:
+    [[0,0],[-.27,.20],[-.39,.39],[-.28,.53],[-.37,.72],[0,1],[.37,.72],[.28,.53],[.39,.39],[.27,.20]];
+  const blade=foldedLeaf(outline);
+  // Expose the folded upper ridge; keep the old species' shared leaf winding intact.
+  const vertices=blade.attributes.position;
+  for(let i=0;i<vertices.count;i+=3){const p=[vertices.getX(i+1),vertices.getY(i+1),vertices.getZ(i+1)];vertices.setXYZ(i+1,vertices.getX(i+2),vertices.getY(i+2),vertices.getZ(i+2));vertices.setXYZ(i+2,...p);}
+  blade.computeVertexNormals();
+  for(let spray=0;spray<3;spray++)for(let j=0;j<4;j++){
+    const a=j*1.58+spray*2.17,reach=.66+.11*Math.sin(j*2.1+spray);
+    const origin=new THREE.Vector3(Math.cos(spray*2.4)*.24,[-.28,.30,-.06][spray],Math.sin(spray*2.4)*.24);
+    const direction=new THREE.Vector3(Math.cos(a)*reach,(birch?-.12:.16)+.15*Math.sin(a+spray),Math.sin(a)*reach);
+    const length=direction.length();direction.normalize();
+    const right=direction.clone().cross(up).normalize(),normal=right.clone().cross(direction).normalize();
+    const matrix=new THREE.Matrix4().makeBasis(right,direction,normal).scale(new THREE.Vector3(length*(birch?1.15:1.40),length,length));
+    matrix.setPosition(origin);pieces.push(blade.clone().applyMatrix4(matrix));
+  }
+  const geometry=mergeGeometries(pieces,false);pieces.forEach(g=>g.dispose());blade.dispose();return geometry;
+}
+G.oakBough=broadleafBough(false);G.birchBough=broadleafBough(true);
 
 G.gem=facetedMineral([[-1,0],[-.40,.73],[.43,1],[1.06,0]],6);
 for(const [key,color]of Object.entries({goldShade:'#b58c37',leafMid:'#75994e',barkCrease:'#62472f',birdDark:'#38586a',birdLight:'#94b7bd',deerShade:'#936a48',earPink:'#c28d76'}))C[key]=new THREE.MeshStandardMaterial({color,roughness:.87,flatShading:true});
@@ -157,18 +180,20 @@ export function createStagedTree(kind,{variation=0}={}){
       }else{
         const birch=kind==='birch',count=golden?9:birch?8:7;
         for(let i=0;i<count;i++){
-          const a=i*2.399+phase,r=birch?.40:golden?.68:.70;
-          const y=(birch?3.1+i*.28:golden?2.72+(i%3)*.56:3.02+(i%3)*.52)*tall;
+          // Birch forms one airy, tapering crown; oak has a broad overlapping lower canopy.
+          const a=i*2.399+phase,r=birch?(.35+.21*Math.sin((i+1)*Math.PI/9)):golden?.68:.64;
+          const y=(birch?2.43+i*.36:golden?2.72+(i%3)*.56:2.63+(i%3)*.59)*tall;
           const x=Math.cos(a)*r+(i>3?lean:0),z=Math.sin(a)*r;bough(x,y,z,birch?.05:.085);
           if(!golden){
-            crown.add('cushion',i%2?'leaf':'leafDark',x,y+.12,z,birch?.33:.49,birch?.48:.52,birch?.30:.44,.10*Math.sin(i),a,.10*Math.cos(i));
+            const foliage=birch?'birchBough':'oakBough';
+            crown.add(foliage,i%2?'leaf':'leafMid',x*.88,y+.12,z*.88,birch?(.65-(i>5?(i-5)*.065:0)):.77,birch?1.30:1.04,birch?.61:.74,.10*Math.sin(i),a,.10*Math.cos(i));
             for(let lobe=0;lobe<2;lobe++){
-              const aa=a+(lobe?1:-1)*.9,xx=x+Math.cos(aa)*(birch?.16:.24),zz=z+Math.sin(aa)*(birch?.16:.24);
-              crown.add('cushion',lobe?'leafMid':'leaf',xx,y+.20+(lobe?-.10:.10),zz,birch?.21:.29,birch?.27:.30,birch?.21:.28,.08,aa);
+              const aa=a+(lobe?1:-1)*.9,xx=x+Math.cos(aa)*(birch?.19:.22),zz=z+Math.sin(aa)*(birch?.19:.22);
+              crown.add(foliage,lobe?'leafMid':'leaf',xx,y+.18+(lobe?-.17:.17),zz,birch?.36:.43,birch?.66:.53,birch?.35:.42,.08,aa);
             }
           }
           else crown.add('cushion','goldShade',x,y+.12,z,.31,.32,.30,.08,a);
-          for(let j=0;j<(golden?4:3);j++)leafSpray(crown,golden?'gold':birch?'leafLight':'leafMid',[x+Math.cos(a+j*2.1)*.16,y+.10+(j%2)*.15,z+Math.sin(a+j*2.1)*.16],a+j*2.1,golden?.43:birch?.37:.47,golden?'goldLeaf':birch?'leaf':'oakLeaf');
+          for(let j=0;j<(golden?4:3);j++)leafSpray(crown,golden?'gold':birch?'leafLight':'leafMid',[x+Math.cos(a+j*2.1)*.16,y+.10+(j%2)*.15,z+Math.sin(a+j*2.1)*.16],a+j*2.1,golden?.43:birch?.44:.49,golden?'goldLeaf':birch?'leaf':'oakLeaf');
           if(golden){for(const side of [-1,1]){const xx=x+side*.20; bloom.beam('stem',[x,y,z],[xx,y-.24,z+.08],.016);bloom.add('ball','goldLight',xx,y-.32,z+.08,.072,.115,.078);bloom.add('rock','gold',xx,y-.39,z+.08,.051,.034,.051);}}
           else if(!birch)blossom(bloom,x,y+.37,z,.085,false,'cream');
         }

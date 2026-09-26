@@ -9,8 +9,8 @@ export function createResidentSystem({scene,getState,canStand,floorHeight,notice
  function corridor(a,b,baseY=0){const count=Math.ceil(Math.hypot(b.x-a.x,b.z-a.z)/.08);for(let i=0;i<=count;i++){const t=i/Math.max(1,count);if(!canStand(a.x+(b.x-a.x)*t,a.z+(b.z-a.z)*t,baseY))return false;}return true;}
  function prepare(r){
   const home=findHomes(getState().buildings).find(h=>h.baseY===(r.baseY??0)&&h.cells.some(k=>r.cells.includes(k)));
-  for(const d of home?.doors??[r.door]){
-   const start={x:d.x+d.nx*1.5,z:d.z+d.nz*1.5},points=waypoints(d);let previous=start;
+  for(const d of home?.doors??[r.door])for(const distance of (r.habitat==='ocean'?[1.5,.75]:[1.5])){
+   const start={x:d.x+d.nx*distance,z:d.z+d.nz*distance},points=waypoints(d);let previous=start;
    if(!canStand(start.x,start.z,r.baseY??0)||!points.every(p=>{const ok=corridor(previous,p,r.baseY??0);previous=p;return ok;}))continue;
    r.door=d;r.x=start.x;r.z=start.z;r.routeStage=0;return true;
   }

@@ -403,22 +403,25 @@ export function createResident(variant = 0, outfit = 0, diver = false) {
   if(diver){
     if(!M.diverCream){material('diverCream','#e8dfb6',.42,.15);material('diverBrass','#b38b53',.36,.5);material('diverTeal','#448d89',.48,.15);}
     const helmet=new Batch();
-    // Open front frame keeps the friendly eyes and smile clear; back/crown enclose the head.
-    block(helmet,'diverCream',0,.315,-.012,.455,.16,.435);
-    block(helmet,'diverCream',0,.293,.195,.450,.085,.078);
-    block(helmet,'diverCream',0,.12,-.218,.441,.43,.055);
+    // One continuous chamfered shell encloses the head, with a broad open visor.
+    // The crown rolls into the sides instead of reading as a separate rectangular lid.
+    const outline=(w,h,cy,c)=>[[-w/2+c,cy-h/2],[w/2-c,cy-h/2],[w/2,cy-h/2+c],[w/2,cy+h/2-c],[w/2-c,cy+h/2],[-w/2+c,cy+h/2],[-w/2,cy+h/2-c],[-w/2,cy-h/2+c]];
+    const band=(outer,z0,inner,z1,mat)=>{
+      const vertices=[];for(let i=0;i<8;i++){const j=(i+1)%8,a=[...outer[i],z0],b=[...outer[j],z0],c=[...inner[i],z1],d=[...inner[j],z1];vertices.push(...a,...c,...b,...b,...c,...d);}
+      const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.Float32BufferAttribute(vertices,3));geo.computeVertexNormals();helmet.geometry(geo,mat);geo.dispose();
+    };
+    const outer=outline(.480,.505,.125,.092),rear=outline(.444,.463,.128,.09),back=outline(.335,.345,.131,.079),rim=outline(.406,.379,.105,.05),aperture=outline(.371,.346,.105,.042);
+    band(outer,.202,rear,-.139,'diverCream');band(rear,-.139,back,-.236,'diverCream');band(back,-.236,outline(.008,.008,.131,.002),-.256,'diverCream');
+    band(rim,.246,outer,.202,'diverCream');band(aperture,.258,rim,.246,'diverBrass');
     for(const side of [-1,1]){
-      block(helmet,'diverCream',side*.222,.12,-.017,.055,.43,.42);
-      block(helmet,'diverBrass',side*.220,.10,.211,.045,.350,.036);
-      helmet.add('cylinder','diverBrass',side*.258,.13,-.025,.051,.035,.051,0,0,Math.PI/2);
-      helmet.add('cylinder','diverTeal',side*.279,.13,-.025,.028,.012,.028,0,0,Math.PI/2);
+      helmet.add('cylinder','diverBrass',side*.250,.125,-.025,.044,.024,.044,0,0,Math.PI/2);
+      helmet.add('cylinder','diverTeal',side*.265,.125,-.025,.026,.012,.026,0,0,Math.PI/2);
+      for(const y of [-.042,.247])helmet.add('ball','diverBrass',side*.185,y,.230,.011,.011,.009);
     }
-    for(const y of [-.072,.281])block(helmet,'diverBrass',0,y,.211,.455,.038,.038);
-    block(helmet,'diverTeal',0,-.087,-.013,.435,.065,.390);
-    block(helmet,'diverBrass',0,-.116,.004,.335,.024,.310);
-    block(helmet,'diverTeal',0,-.142,.012,.287,.040,.259);
+    block(helmet,'diverTeal',0,-.123,-.004,.287,.057,.269);
+    block(helmet,'diverBrass',0,-.144,.004,.303,.014,.277);
     // A restrained visor reflection at the edge, without a screen over the face.
-    block(helmet,'diamondLight',-.188,.169,.236,.009,.164,.004,0,0,-.07);
+    block(helmet,'diamondLight',-.166,.155,.260,.007,.103,.003,0,0,-.10);
     helmet.add('ball','diamondLight',.145,.304,.216,.018,.013,.008);
     head.add(helmet.finish('diver-helmet'));
     const gear=new Batch();
