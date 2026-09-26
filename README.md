@@ -6,6 +6,10 @@ Kauris is a first-person, Minecraft-inspired browser game with an authored, bloc
 
 This is a small single-player game in active development. Your world stays in this browser’s local storage; no account or server is needed to play. Keep the same browser and site address to keep using that save.
 
+Choose **Suomi, Svenska or English** on the welcome screen or in the picture book. Menus, guidance and object names change immediately; the language preference is remembered separately from your world. The initial language follows a supported browser language, with English as the fallback.
+
+Larger text and picture cards make words easier to notice. Look at a nearby tree, flower, animal, neighbour or building, or point to a picture in the book, to see its name in clear uppercase letters. Keyboard focus works too, including on special seeds you have not found yet. Pictures and words offer a gentle association while playing, without quizzes, narration or claims of tested learning outcomes.
+
 ## Run
 
 Use Node 22.12 or newer:
@@ -38,6 +42,10 @@ Open [localhost:4173](http://localhost:4173). `npm run dev` starts development w
 | Resume | Click the play triangle or paused background |
 | Neighbour clothes | Shirt picture or F nearby |
 | Sound | Speaker button; preference is remembered |
+| Language | Suomi / Svenska / English in the welcome screen or picture book |
+| Read a picture's word | Hover or focus with Tab / Shift-Tab in menus |
+
+While a menu is open, Tab and arrow keys retain their normal navigation. Escape returns to the paused welcome screen; the play triangle resumes.
 
 Dig a hole, choose a seed, fill the soil and give it a drink. Watered plants mature in about 15–28 seconds of active play. Harvest the starter orchard or wild plants to get more materials. Seeds and water are unlimited. Menus pause growth and creatures; the picture book remains scrollable in narrow windows.
 

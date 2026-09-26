@@ -21,8 +21,8 @@ export const PIECES = {floor:{name:'Floor',cost:2},wall:{name:'Wall',cost:3},win
 export const MATERIALS = ['wood','copper','iron','diamond'];
 export const cellKey=(gx,gz)=>`${gx},${gz}`;
 export const validCell=(gx,gz)=>Number.isInteger(gx)&&Number.isInteger(gz)&&Math.abs(gx)<=13&&Math.abs(gz)<=13;
-const ok=(message,extra={})=>({ok:true,message,...extra});
-const no=message=>({ok:false,message});
+const ok=(code,params={},extra={})=>({ok:true,code,params,...extra});
+const no=(code,params={})=>({ok:false,code,params});
 export function freshState(){
   const s={version:1,wildRemoved:[],worldHidden:[],residents:[],plots:{},buildings:[],inventory:{wood:36,copper:0,iron:0,diamond:0,fiber:0},nextId:1,player:{x:0,y:0,z:9,yaw:0,pitch:-0.18},stats:{planted:0,harvested:0,built:0}};
   // Harvestable starter orchard; the clearing remains open for the player's creation.
@@ -44,37 +44,37 @@ export function mergeWorld(s){
  return s;
 }
 export function harvestWild(s,id){
- const r=liveWild(s).find(r=>r.id===id);if(!r)return no('Already gathered.');
+ const r=liveWild(s).find(r=>r.id===id);if(!r)return no('message.alreadyGathered');
  const spec=SEEDS[r.kind];s.wildRemoved.push(id);s.inventory[spec.resource]+=spec.yield;s.stats.harvested++;
- return ok(`+${spec.yield} ${spec.resource}`,{resource:spec.resource,amount:spec.yield});
+ return ok('message.yield',{count:spec.yield,material:spec.resource},{resource:spec.resource,amount:spec.yield});
 }
 export function dig(s,gx,gz){
- if(!validCell(gx,gz))return no('Stay inside the meadow.');
- if(worldBlocked(s,gx,gz))return no('Gather the wild plant first, or choose clear ground.');
- if(s.buildings.some(b=>!wallLike(b)&&b.gx===gx&&b.gz===gz&&baseOf(b)===0))return no('Remove the building here first.');
+ if(!validCell(gx,gz))return no('message.insideMeadow');
+ if(worldBlocked(s,gx,gz))return no('message.clearWild');
+ if(s.buildings.some(b=>!wallLike(b)&&b.gx===gx&&b.gz===gz&&baseOf(b)===0))return no('message.removeBuilding');
  const k=cellKey(gx,gz),p=s.plots[k];
- if(p?.growth>0)return no('Use the axe when the plant is mature.');
- if(p?.phase==='hole'&&!p.seed)return no('This hole is ready for a seed.');
- s.plots[k]={gx,gz,phase:'hole',seed:null,growth:0,water:0};return ok('Hole dug. Choose a seed [2].');
+ if(p?.growth>0)return no('message.matureAxe');
+ if(p?.phase==='hole'&&!p.seed)return no('message.holeReady');
+ s.plots[k]={gx,gz,phase:'hole',seed:null,growth:0,water:0};return ok('message.dug');
 }
 export function plant(s,gx,gz,seed){
  const p=s.plots[cellKey(gx,gz)];
- if(!Object.hasOwn(SEEDS,seed))return no('Choose a seed.');
- if(!seedUnlocked(s,seed))return no('Follow the sparkling trail to discover this seed.');
- if(!p||p.phase!=='hole')return no('Dig a hole with the shovel first [1].');
- if(p.seed)return no('Seed already planted. Fill the hole [3].');
- p.seed=seed;p.variation=plantVariation(gx,gz,seed,s.stats.planted);s.stats.planted++;return ok(`${SEEDS[seed].name} sown. Fill with soil [3].`);
+ if(!Object.hasOwn(SEEDS,seed))return no('message.chooseSeed');
+ if(!seedUnlocked(s,seed))return no('message.discoverSeed');
+ if(!p||p.phase!=='hole')return no('message.shovelFirst');
+ if(p.seed)return no('message.seedAlready');
+ p.seed=seed;p.variation=plantVariation(gx,gz,seed,s.stats.planted);s.stats.planted++;return ok('message.sown');
 }
 export function fill(s,gx,gz){
  const k=cellKey(gx,gz),p=s.plots[k];
- if(!p||p.phase!=='hole')return no('Aim at an open hole.');
- if(!p.seed){delete s.plots[k];return ok('Hole filled.');}
- p.phase='filled';return ok('Soil tucked in. Hold the watering can to water [4].');
+ if(!p||p.phase!=='hole')return no('message.openHole');
+ if(!p.seed){delete s.plots[k];return ok('message.holeFilled');}
+ p.phase='filled';return ok('message.covered');
 }
 export function water(s,gx,gz,dt){
  const p=s.plots[cellKey(gx,gz)];
- if(!p?.seed||p.phase!=='filled')return no('Plant and fill the hole before watering.');
- p.water=Math.min(1,p.water+Math.max(0,Math.min(dt,0.1))*.7);return ok('Watering');
+ if(!p?.seed||p.phase!=='filled')return no('message.plantFillFirst');
+ p.water=Math.min(1,p.water+Math.max(0,Math.min(dt,0.1))*.7);return ok('message.watering');
 }
 export function tick(s,dt){
  dt=Math.max(0,Math.min(dt,.1));
@@ -84,10 +84,10 @@ export function tick(s,dt){
 }
 export function harvest(s,gx,gz){
  const k=cellKey(gx,gz),p=s.plots[k];
- if(!p?.seed)return no('Aim at a mature tree or flower patch.');
- if(p.growth<1)return no('Let it grow fully. Keep the soil watered.');
+ if(!p?.seed)return no('message.maturePlant');
+ if(p.growth<1)return no('message.letGrow');
  const spec=SEEDS[p.seed];s.inventory[spec.resource]+=spec.yield;delete s.plots[k];s.stats.harvested++;
- return ok(`+${spec.yield} ${spec.resource}. Ready to build [6].`,{resource:spec.resource,amount:spec.yield});
+ return ok('message.harvested',{count:spec.yield,material:spec.resource},{resource:spec.resource,amount:spec.yield});
 }
 function supported(s,b){
  const same=s.buildings.filter(x=>baseOf(x)===baseOf(b));
@@ -97,26 +97,26 @@ function supported(s,b){
  return b.level>=1&&same.some(x=>boundary(x)&&x.level===b.level-1);
 }
 export function validateBuild(s,b,{legacy=false}={}){
- if(!Number.isFinite(baseOf(b))||!adjacentCells(b).some(c=>buildBase(c.gx,c.gz)===baseOf(b))||!Object.hasOwn(PIECES,b.kind)||!MATERIALS.includes(b.material)||!Number.isInteger(b.level)||b.level<0||b.level>3||!Number.isInteger(b.rotation)||b.rotation<0||b.rotation>3)return no('Invalid building piece.');
- if(!legacy&&baseOf(b)===0&&!adjacentCells(b).some(c=>validCell(c.gx,c.gz)&&!worldBlocked(s,c.gx,c.gz)))return no('Gather the wild plant first, or choose clear ground.');
- if(s.buildings.length>=400)return no('This meadow can hold 400 pieces.');
- if(!wallLike(b)&&s.plots[cellKey(b.gx,b.gz)])return no('Use clear ground; harvest plants or refill empty holes.');
- if(s.buildings.some(x=>wallLike(x)&&wallLike(b)?edgeKey(x)===edgeKey(b):x.gx===b.gx&&x.gz===b.gz&&baseOf(x)===baseOf(b)&&x.level===b.level&&(x.kind===b.kind||(['floor','roof'].includes(x.kind)&&['floor','roof'].includes(b.kind)))))return no('There is already a piece here.');
- if(!supported(s,b))return no(b.kind==='roof'?'Roof needs a wall directly below.':b.kind==='floor'?'Upper floor needs a wall below.':'Place a floor in this cell first.');
- if(s.inventory[b.material]<PIECES[b.kind].cost)return no(`Need ${PIECES[b.kind].cost} ${b.material}. Grow and harvest more.`);
- return ok('Place');
+ if(!Number.isFinite(baseOf(b))||!adjacentCells(b).some(c=>buildBase(c.gx,c.gz)===baseOf(b))||!Object.hasOwn(PIECES,b.kind)||!MATERIALS.includes(b.material)||!Number.isInteger(b.level)||b.level<0||b.level>3||!Number.isInteger(b.rotation)||b.rotation<0||b.rotation>3)return no('message.invalidPiece');
+ if(!legacy&&baseOf(b)===0&&!adjacentCells(b).some(c=>validCell(c.gx,c.gz)&&!worldBlocked(s,c.gx,c.gz)))return no('message.clearWild');
+ if(s.buildings.length>=400)return no('message.pieceLimit');
+ if(!wallLike(b)&&s.plots[cellKey(b.gx,b.gz)])return no('message.clearGround');
+ if(s.buildings.some(x=>wallLike(x)&&wallLike(b)?edgeKey(x)===edgeKey(b):x.gx===b.gx&&x.gz===b.gz&&baseOf(x)===baseOf(b)&&x.level===b.level&&(x.kind===b.kind||(['floor','roof'].includes(x.kind)&&['floor','roof'].includes(b.kind)))))return no('message.occupied');
+ if(!supported(s,b))return no(b.kind==='roof'?'message.roofSupport':b.kind==='floor'?'message.floorSupport':'message.floorFirst');
+ if(s.inventory[b.material]<PIECES[b.kind].cost)return no('message.needMaterial',{count:PIECES[b.kind].cost,material:b.material});
+ return ok('message.place');
 }
 export function build(s,b){
  b=canonicalPiece(b);
  const result=validateBuild(s,b);if(!result.ok)return result;
  const cost=PIECES[b.kind].cost;s.inventory[b.material]-=cost;
- const piece={id:s.nextId++,gx:b.gx,gz:b.gz,kind:b.kind,material:b.material,level:b.level,rotation:b.rotation,baseY:baseOf(b),cost};s.buildings.push(piece);s.stats.built++;reconcileResidents(s);return ok(`${PIECES[b.kind].name} placed · −${cost} ${b.material}`,{piece});
+ const piece={id:s.nextId++,gx:b.gx,gz:b.gz,kind:b.kind,material:b.material,level:b.level,rotation:b.rotation,baseY:baseOf(b),cost};s.buildings.push(piece);s.stats.built++;reconcileResidents(s);return ok('message.placed',{piece:b.kind,count:cost,material:b.material},{piece});
 }
 export function remove(s,id){
- const b=s.buildings.find(x=>x.id===id);if(!b)return no('Aim at a building piece.');
+ const b=s.buildings.find(x=>x.id===id);if(!b)return no('message.aimPiece');
  const rest={...s,buildings:s.buildings.filter(x=>x.id!==id)};
- if(rest.buildings.some(x=>!supported(rest,x)))return no('Remove the supported pieces above this one first.');
- s.buildings=rest.buildings;s.inventory[b.material]+=b.cost;reconcileResidents(s);return ok(`Recovered ${b.cost} ${b.material}.`);
+ if(rest.buildings.some(x=>!supported(rest,x)))return no('message.removeAbove');
+ s.buildings=rest.buildings;s.inventory[b.material]+=b.cost;reconcileResidents(s);return ok('message.refunded',{count:b.cost,material:b.material});
 }
 export function serialize(s){return JSON.stringify(s);}
 export function deserialize(raw){

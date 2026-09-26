@@ -1,5 +1,6 @@
 // Compact authored pictograms. UI owns accessible labels, sizing and selected state.
 const paths = {
+  grass: '<path fill="#78a05b" stroke="#426c42" d="M14 56C17 36 9 20 6 15c14 6 19 21 20 41h-12ZM27 56C29 29 25 13 21 6c17 12 16 33 15 50h-9ZM37 56C38 33 47 18 59 14c-9 14-11 30-12 42H37Z"/><path d="M9 57h45" stroke="#806644" stroke-width="4"/>',
   shirt: '<path fill="#91b784" d="m20 10 12 5 12-5 15 12-9 12-7-5v28H21V29l-7 5-9-12z"/><path d="M24 12c0 11 16 11 16 0M24 37h13v10H24z" fill="#eee0bd"/>',
   sound: '<path fill="#dec398" d="M8 25h12L35 12v40L20 39H8z"/><path d="M43 23q9 9 0 18m7-27q17 18 0 36" fill="none" stroke="#91b784" stroke-width="4"/>',
   mute: '<path fill="#dec398" d="M8 25h12L35 12v40L20 39H8z"/><path d="m43 24 14 16m0-16L43 40" fill="none" stroke="#ce835d" stroke-width="5"/>',

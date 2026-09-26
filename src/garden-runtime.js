@@ -37,5 +37,5 @@ export function createGardenSystem({scene,getState,getPlayer,canStand,treeHeight
   }
  }
  function reset(){for(const a of animals){a.at=null;a.model.visible=false;}sync();}
- return {sync,update,reset,discoveries,snapshot:()=>animals.filter(a=>a.model.visible).map(a=>({kind:a.kind,at:a.at,x:a.model.position.x,y:a.model.position.y,z:a.model.position.z,walking:a.walking,perch:a.perch}))};
+ return {sync,update,reset,discoveries,readingObjects:()=>animals.filter(a=>a.model.visible).map(a=>({kind:a.kind,model:a.model,index:a.index})),snapshot:()=>animals.filter(a=>a.model.visible).map(a=>({kind:a.kind,at:a.at,x:a.model.position.x,y:a.model.position.y,z:a.model.position.z,walking:a.walking,perch:a.perch}))};
 }
