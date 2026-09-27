@@ -46,7 +46,7 @@ export function reconcileResidents(s){
   const h=homes[match];claimed.add(match);r.cells=h.cells;if(!h.cells.includes(r.anchor))r.anchor=h.anchor;r.door=h.doors[0];r.baseY=h.baseY;r.habitat=h.habitat;
   if(r.status==='waiting')r.status=r.arrived?'home':'arriving';
  }
- homes.forEach((h,i)=>{if(claimed.has(i))return;const id=nextId++;s.residents.push({id,baseY:h.baseY,habitat:h.habitat,variant:(id-1)%4,outfit:0,anchor:h.anchor,cells:h.cells,door:h.doors[0],x:null,z:null,status:'arriving',arrived:false,notified:false,routeStage:0});});
+ homes.forEach((h,i)=>{if(claimed.has(i))return;const id=nextId++;s.residents.push({id,baseY:h.baseY,habitat:h.habitat,variant:(id-1)%4,outfit:0,anchor:h.anchor,cells:h.cells,door:h.doors[0],x:null,z:null,status:'arriving',arrived:false,notified:false,routeStage:0,preference:['watch','rest','ride'][(id-1)%3],welcomeStage:0,gifts:false,rideId:null});});
  return homes;
 }
 export function readResidents(raw){
@@ -56,7 +56,9 @@ export function readResidents(raw){
   if(!r||!Number.isSafeInteger(r.id)||r.id<1||ids.has(r.id)||!Array.isArray(r.cells)||!r.cells.length||r.cells.length>400||r.cells.some(k=>typeof k!=='string'||!/^(-?\d+),(-?\d+)$/.test(k))||typeof r.anchor!=='string'||!r.cells.includes(r.anchor)||!['arriving','home','waiting'].includes(r.status)||!Number.isInteger(r.variant)||r.variant<0||r.variant>3||typeof r.arrived!=='boolean'||typeof r.notified!=='boolean'||!Number.isInteger(r.routeStage)||r.routeStage<0||r.routeStage>2||!((r.x===null&&r.z===null)||(Number.isFinite(r.x)&&Number.isFinite(r.z)&&inWorld(r.x,r.z))))throw Error('Invalid resident identity');
   if(![0,-7.2].includes(baseOf(r)))throw Error('Invalid resident elevation');
   if(r.outfit!==undefined&&(!Number.isInteger(r.outfit)||r.outfit<0||r.outfit>3))throw Error('Invalid resident outfit');
+  if(r.preference!==undefined&&!['watch','rest','ride'].includes(r.preference)||r.welcomeStage!==undefined&&(!Number.isInteger(r.welcomeStage)||r.welcomeStage<0||r.welcomeStage>2)||r.gifts!==undefined&&typeof r.gifts!=='boolean')throw Error('Invalid resident habit');
+  if(r.rideId!==undefined&&r.rideId!==null&&(!Number.isSafeInteger(r.rideId)||r.rideId<1))throw Error('Invalid resident lift');
   const d=r.door;if(!d||!['gx','gz','x','z','nx','nz'].every(k=>Number.isFinite(d[k]))||Math.abs(d.nx)+Math.abs(d.nz)!==1)throw Error('Invalid resident home');ids.add(r.id);
-  return {id:r.id,baseY:baseOf(r),habitat:isUnderwaterHome(baseOf(r))?'ocean':'land',variant:r.variant,outfit:r.outfit??0,anchor:r.anchor,cells:[...new Set(r.cells)],door:{...d},x:r.x,z:r.z,status:r.status,arrived:r.arrived,notified:r.notified,routeStage:r.routeStage};
+  return {id:r.id,baseY:baseOf(r),habitat:isUnderwaterHome(baseOf(r))?'ocean':'land',variant:r.variant,outfit:r.outfit??0,anchor:r.anchor,cells:[...new Set(r.cells)],door:{...d},x:r.x,z:r.z,status:r.status,arrived:r.arrived,notified:r.notified,routeStage:r.routeStage,preference:r.preference??['watch','rest','ride'][(r.id-1)%3],welcomeStage:r.welcomeStage??(r.arrived?2:0),gifts:r.gifts??false,rideId:r.rideId??null};
  });
 }

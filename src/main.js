@@ -17,10 +17,16 @@ import {swimmingAt,verticalStep} from './movement.js';
 import {reefBlocked,reefFloor,reefCeiling,reefSafeFeet} from './reef-collision.js';
 import {createOceanWorld,createReefCover} from './ocean-visuals.js';
 import {createMarineAnimal,animateMarineAnimal,MARINE_PROFILES} from './marine-visuals.js';
+import {createWhaleSystem} from './whale.js';
 import {createMarineLife} from './marine.js';
+import {DELIGHTS,DELIGHT_KEYS,propBoxes,propFloor,propSupport,propAnchor,rotateXZ,placeDelight,removeDelight,validateDelight,boxesOverlap,liftRiders} from './delights.js';
+import {createDelightSystem} from './delight-runtime.js';
+import {createDelight} from './delight-visuals.js';
+import {animateCraftPiece} from './craft-visuals.js';
 import {createMeadowCover,animateMeadowCover} from './meadow-visuals.js';
 import {createI18n,LANGUAGES} from './i18n.js';
 import {nearestReading,createReadingFocus,assistedReading} from './reading.js';
+import {flowerEnvelope,flowerTarget} from './flower-targeting.js';
 import './ui.css';
 const $=id=>document.getElementById(id), canvas=$('game');
 let localeStorage;try{localeStorage=localStorage;}catch{}
@@ -44,7 +50,7 @@ const picture=(key,label)=>`<img class="modelPicture" src="${pictures[key]}" alt
 const world=createWorld({occupiedCells:[...Object.values(state.plots),...state.buildings,...activeDiscoveries(state).flatMap(d=>{const cells=[];for(let gx=Math.floor(d.bounds.minX/2);gx<=Math.ceil(d.bounds.maxX/2);gx++)for(let gz=Math.floor(d.bounds.minZ/2);gz<=Math.ceil(d.bounds.maxZ/2);gz++)cells.push({gx,gz});return cells;})],hiddenLandmarks:state.worldHidden});scene.add(world.group);
 const ocean=createOceanWorld({terrain:TERRAIN,heightAt:terrainHeight});scene.add(ocean);const reefSolids=ocean.userData.reefSolids;
 // A separate invisible ray surface shares the same sampled height as ocean scenery.
-const seabedGeo=new THREE.PlaneGeometry(53.3,39,54,78).rotateX(-Math.PI/2).translate(0,0,46.5);
+const seabedGeo=new THREE.PlaneGeometry(TERRAIN.maxX-TERRAIN.minX,TERRAIN.maxZ-TERRAIN.shoreStart,54,Math.ceil((TERRAIN.maxZ-TERRAIN.shoreStart)*2)).rotateX(-Math.PI/2).translate(0,0,(TERRAIN.maxZ+TERRAIN.shoreStart)/2);
 const seabedPos=seabedGeo.attributes.position;for(let i=0;i<seabedPos.count;i++)seabedPos.setY(i,terrainHeight(seabedPos.getX(i),seabedPos.getZ(i)));seabedGeo.computeVertexNormals();
 const seabed=new THREE.Mesh(seabedGeo,new THREE.MeshBasicMaterial({visible:false}));seabed.userData.seabed=true;scene.add(seabed);
 const waterSurface=new THREE.Mesh(new THREE.PlaneGeometry(500,500).rotateX(-Math.PI/2),new THREE.MeshPhysicalMaterial({color:'#58bdbe',roughness:.23,metalness:.08,transparent:true,opacity:.48,depthWrite:false,side:THREE.DoubleSide}));waterSurface.position.set(0,TERRAIN.waterY,0);scene.add(waterSurface);
@@ -55,7 +61,7 @@ function poseMarine(dt=0){for(const {actor:a,model} of marine){model.position.se
 poseMarine();
 let cover=null,reefCover=null,coverKey='';
 function syncCover(){
- const excludedCells=[...Object.values(state.plots),...state.buildings.flatMap(adjacentCells),...marine.filter(a=>a.actor.kind==='octopus').map(a=>({gx:Math.round(a.actor.homeX/2),gz:Math.round(a.actor.homeZ/2)})),...activeDiscoveries(state).flatMap(d=>{const a=[];for(let gx=Math.floor(d.bounds.minX/2);gx<=Math.ceil(d.bounds.maxX/2);gx++)for(let gz=Math.floor(d.bounds.minZ/2);gz<=Math.ceil(d.bounds.maxZ/2);gz++)a.push({gx,gz});return a;})];
+ const excludedCells=[...Object.values(state.plots),...state.buildings.flatMap(adjacentCells),...state.delights,...marine.filter(a=>a.actor.kind==='octopus').map(a=>({gx:Math.round(a.actor.homeX/2),gz:Math.round(a.actor.homeZ/2)})),...activeDiscoveries(state).flatMap(d=>{const a=[];for(let gx=Math.floor(d.bounds.minX/2);gx<=Math.ceil(d.bounds.maxX/2);gx++)for(let gz=Math.floor(d.bounds.minZ/2);gz<=Math.ceil(d.bounds.maxZ/2);gz++)a.push({gx,gz});return a;})];
  const key=excludedCells.map(p=>`${p.gx},${p.gz}`).sort().join(';');if(key===coverKey&&cover)return;coverKey=key;
  if(cover){scene.remove(cover);const materials=new Set();cover.traverse(o=>{if(o.isMesh&&cover.userData.privateResources){o.geometry.dispose();materials.add(o.material);}});materials.forEach(m=>m.dispose());}
  if(reefCover){scene.remove(reefCover);const materials=new Set();reefCover.traverse(o=>{if(o.isMesh&&reefCover.userData.privateResources){o.geometry.dispose();materials.add(o.material);}});materials.forEach(m=>m.dispose());}
@@ -107,22 +113,23 @@ for(let gx=-13;gx<=13;gx++)for(let gz=-13;gz<=13;gz++){
  groundCells.push({gx,gz});matrix.makeTranslation(gx*2,-.35,gz*2);ground.setMatrixAt(n,matrix);
  n++;
 }
-const plantMeshes=new Map(),buildMeshes=new Map(),wildMeshes=new Map();let interactive=[ground];
+const plantMeshes=new Map(),buildMeshes=new Map(),wildMeshes=new Map(),flowerEnvelopes=new Map();let interactive=[ground];
 const tileOutline=new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(1.98,.04,1.98)),new THREE.LineBasicMaterial({color:'#f7e5a3'}));scene.add(tileOutline);
 const plotMaterial=new THREE.MeshStandardMaterial({color:'#795a37',roughness:.96});
 const plotGeometry=new THREE.BoxGeometry(1.82,.035,1.82);
 const plotsGroup=new THREE.Group();scene.add(plotsGroup);
 const tools=[{key:'shovel',name:'Dig',icon:'♧'},{key:'seed',name:'Seeds',icon:'✤'},{key:'fill',name:'Fill',icon:'▰'},{key:'hose',name:'Water',icon:'≈'},{key:'axe',name:'Harvest',icon:'⌁'},{key:'build',name:'Build',icon:'⌂'},{key:'remove',name:'Remove',icon:'↶'}];
 let fallbackLook=false,rightDrag=false;
-let tool=0,seedIndex=0,pieceIndex=0,materialIndex=0,rotation=0,level=0,toolMesh,preview;
-const seedKeys=Object.keys(SEEDS),pieceKeys=Object.keys(PIECES);
+let tool=0,seedIndex=0,pieceIndex=0,materialIndex=0,rotation=0,level=0,toolMesh,preview,connectionGhost;
+const seedKeys=Object.keys(SEEDS),pieceKeys=[...Object.keys(PIECES),...DELIGHT_KEYS];
+const isToy=()=>Object.hasOwn(DELIGHTS,pieceKeys[pieceIndex]);
 let yaw=state.player.yaw,pitch=state.player.pitch,feet=reefSafeFeet(reefSolids,state.player.x,state.player.z,state.player.y??0),vy=0,locked=false,held=false,catalogOpen=false,started=false,dirty=false,lastSave=0,elapsed=0,target=null,swing=0,toastUntil=0;
 const pos=new THREE.Vector3(state.player.x,0,state.player.z),keys=new Set();
 const waterPositions=new Float32Array(28*3),waterGeometry=new THREE.BufferGeometry();waterGeometry.setAttribute('position',new THREE.BufferAttribute(waterPositions,3));
 const dropCanvas=document.createElement('canvas');dropCanvas.width=dropCanvas.height=32;const dc=dropCanvas.getContext('2d'),dg=dc.createRadialGradient(16,16,1,16,16,15);dg.addColorStop(0,'#ffffff');dg.addColorStop(.45,'#ffffffdd');dg.addColorStop(1,'#ffffff00');dc.fillStyle=dg;dc.fillRect(0,0,32,32);
 const stream=new THREE.Points(waterGeometry,new THREE.PointsMaterial({color:'#c5faff',size:.024,map:new THREE.CanvasTexture(dropCanvas),transparent:true,opacity:.85,depthWrite:false}));stream.frustumCulled=false;stream.visible=false;scene.add(stream);
-const sparks=[],falling=[];const audio=createAudio();let garden;let outfitResident=null;let nearestFriend=null;
-let residents,pourWeight=0,swimHudMode=null;
+const sparks=[],falling=[];const audio=createAudio();const whale=createWhaleSystem({scene,event:(kind,p)=>audio.play(kind,p)});let garden;let outfitResident=null;let nearestFriend=null;
+let residents,delights,pourWeight=0,swimHudMode=null;
 const chop={},wheel={};let chopProgress=0,totalImpacts=0,rewardUntil=0,failureUntil=0,lastCue="";
 function resetActions(){held=false;advanceChop(chop,null,0);chopProgress=0;wheelStep(wheel,0,0,0,false);}
 let lastReward=null,lastToast=null,saveStatusKey='ui.saved';
@@ -134,11 +141,12 @@ function save(){
  try{localStorage.setItem(SAVE_KEY,serialize(state));saveStatus(fallbackLook?'ui.savedFallback':'ui.saved');dirty=false;}catch{saveStatus('ui.saveUnavailable');}
 }
 function sync(){
- residents?.sync();garden?.sync();marineLife.setBuildings(state.buildings);syncCover();
+ residents?.sync();garden?.sync();delights?.sync();marineLife.setBuildings(state.buildings);marineLife.setDelights(state.delights,delights);syncCover();
  const available=liveWild(state);
- for(const [id,g] of wildMeshes)if(!available.some(r=>r.id===id)){scene.remove(g);wildMeshes.delete(id);}
+ for(const [id,g] of wildMeshes)if(!available.some(r=>r.id===id)){scene.remove(g);wildMeshes.delete(id);flowerEnvelopes.delete(id);}
  for(const r of available)if(!wildMeshes.has(r.id)){
   const g=createTree(r.kind);g.position.set(r.gx*2,0,r.gz*2);g.rotation.y=r.yaw;g.scale.setScalar(r.scale);g.userData.wildId=r.id;g.traverse(o=>{if(o.isMesh)o.userData.wildId=r.id;});wildMeshes.set(r.id,g);scene.add(g);
+  if(isFlower(r.kind))flowerEnvelopes.set(r.id,flowerEnvelope(g,r.id));
  }
 
  for(let i=0;i<groundCells.length;i++){const c=groundCells[i],p=state.plots[cellKey(c.gx,c.gz)];matrix.makeTranslation(c.gx*2,p?.phase==='hole'?-.95:-.35,c.gz*2);ground.setMatrixAt(i,matrix);}ground.instanceMatrix.needsUpdate=true;
@@ -155,11 +163,12 @@ function sync(){
  }
  for(const [id,g] of buildMeshes)if(!state.buildings.some(b=>b.id===id)){scene.remove(g);buildMeshes.delete(id);}
  for(const b of state.buildings)if(!buildMeshes.has(b.id)){const g=createBuildPiece(b.kind,b.material);g.position.set(b.gx*2,baseOf(b)+b.level*2.4,b.gz*2);g.rotation.y=b.rotation*Math.PI/2;g.traverse(o=>{if(o.isMesh)o.userData.buildId=b.id;});scene.add(g);buildMeshes.set(b.id,g);}
- interactive=[ground,seabed,...plantMeshes.values(),...wildMeshes.values(),...buildMeshes.values()];updateHUD();
+ interactive=[ground,seabed,...plantMeshes.values(),...wildMeshes.values(),...buildMeshes.values(),...delights.models.values()];updateHUD();
 }
 function selectedBuild(){
  if(!target)return null;
  let gx=target.gx,gz=target.gz;const kind=pieceKeys[pieceIndex],axis=rotation%2;
+ if(isToy()){const host=state.buildings.find(b=>b.id===target.buildId&&b.kind==='floor'),hostId=kind==='lift'?null:host?.id??null;return {kind,gx,gz,rotation,hostId,baseY:propSupport(state,kind,gx,gz,hostId)??target.baseY??0};}
  if(wallLike({kind})){
   // Pick the near/far physical boundary from aim; rotate chooses just the wall axis.
   if(axis===0&&target.point.z>gz*2)gz++;
@@ -171,6 +180,7 @@ function rotateChoice(){rotation=(rotation+1)%(wallLike({kind:pieceKeys[pieceInd
 function intersectsPlayer(b){return boxes(b).some(a=>touches(a,pos.x,pos.z)&&a.maxY>feet+.3&&a.minY<feet+1.65);}
 function canWalk(x,z){
  if(!inWorld(x,z)||reefBlocked(reefSolids,x,z,feet))return false;
+ for(const p of state.delights)for(const a of propBoxes(p))if(touches(a,x,z)&&a.maxY>feet+.31&&a.minY<feet+1.65)return false;
  for(const b of state.buildings)for(const a of boxes(b))if(touches(a,x,z)&&a.maxY>feet+.31&&a.minY<feet+1.65)return false;
  for(const p of Object.values(state.plots))if(p.growth>.3&&!isFlower(p.seed)&&Math.hypot(x-p.gx*2,z-p.gz*2)<.24+.2*p.growth)return false;
  for(const r of liveWild(state))if(!isFlower(r.kind)&&Math.hypot(x-r.gx*2,z-r.gz*2)<.6)return false;
@@ -179,6 +189,7 @@ function canWalk(x,z){
 }
 function residentCanStand(x,z,baseY=0){
  if(!inWorld(x,z)||Math.abs(terrainHeight(x,z)-baseY)>.25||reefBlocked(reefSolids,x,z,baseY,{radius:.31,height:1.7,step:.3}))return false;
+ for(const p of state.delights)for(const a of propBoxes(p))if(touches(a,x,z,.31)&&a.maxY>baseY+.3&&a.minY<baseY+1.7)return false;
  const floor=state.buildings.some(b=>b.kind==='floor'&&baseOf(b)===baseY&&b.level===0&&Math.abs(x-b.gx*2)<1&&Math.abs(z-b.gz*2)<1);
  if(!floor&&state.plots[cellKey(Math.round(x/2),Math.round(z/2))]?.phase==='hole')return false;
  for(const b of state.buildings)for(const a of boxes(b))if(touches(a,x,z,.31)&&a.maxY>baseY+.3&&a.minY<baseY+1.7)return false;
@@ -189,9 +200,9 @@ function residentCanStand(x,z,baseY=0){
 }
 function residentFloor(x,z,baseY=0){return state.buildings.some(b=>b.kind==='floor'&&baseOf(b)===baseY&&b.level===0&&Math.abs(x-b.gx*2)<1&&Math.abs(z-b.gz*2)<1)?baseY+.15:terrainHeight(x,z);}
 function floorAt(x,z){let f=state.plots[cellKey(Math.round(x/2),Math.round(z/2))]?.phase==='hole'?-.6:terrainHeight(x,z);
- for(const b of state.buildings)if(b.kind==='floor'||b.kind==='roof')for(const a of boxes(b))if(touches(a,x,z,.1)&&a.maxY<=feet+.31)f=Math.max(f,a.maxY);return reefFloor(reefSolids,x,z,feet,f);}
+ for(const b of state.buildings)if(b.kind==='floor'||b.kind==='roof')for(const a of boxes(b))if(touches(a,x,z,.1)&&a.maxY<=feet+.31)f=Math.max(f,a.maxY);return propFloor(state.delights,x,z,feet,reefFloor(reefSolids,x,z,feet,f));}
 function placeTool(){if(toolMesh)toolMesh.position.set(Math.min(.43,Math.tan(camera.fov*Math.PI/360)*.72*camera.aspect*(camera.aspect<1?.4:.76)),camera.aspect<1?-.31:-.42,-.72);}
-function chooseTool(i){resetActions();tool=i;swing=0;if(toolMesh)camera.remove(toolMesh);toolMesh=createTool(tools[i].key);toolMesh.scale.setScalar(i===3?.38:.55);placeTool();toolMesh.rotation.set(-.12,-.22,-.08);camera.add(toolMesh);if(preview){scene.remove(preview);preview.traverse(o=>{if(o.isMesh)o.material.dispose();});preview=null;}if(tool===5){preview=createBuildPiece(pieceKeys[pieceIndex],MATERIALS[materialIndex]);preview.traverse(o=>{if(o.isMesh){o.material=new THREE.MeshBasicMaterial({color:'#e1f4a9',transparent:true,opacity:.4,depthWrite:false});o.castShadow=false;}});scene.add(preview);}updateHUD();}
+function chooseTool(i){if(connectionGhost){scene.remove(connectionGhost);connectionGhost.traverse(o=>{if(o.isMesh)o.material.dispose();});connectionGhost=null;}resetActions();tool=i;swing=0;if(toolMesh)camera.remove(toolMesh);toolMesh=createTool(tools[i].key);toolMesh.scale.setScalar(i===3?.38:.55);placeTool();toolMesh.rotation.set(-.12,-.22,-.08);camera.add(toolMesh);if(preview){scene.remove(preview);preview.traverse(o=>{if(o.isMesh)o.material.dispose();});preview=null;}if(tool===5){preview=isToy()?createDelight(pieceKeys[pieceIndex]):createBuildPiece(pieceKeys[pieceIndex],MATERIALS[materialIndex]);preview.traverse(o=>{if(o.isMesh){o.material=new THREE.MeshBasicMaterial({color:'#e1f4a9',transparent:true,opacity:.4,depthWrite:false});o.castShadow=false;}});scene.add(preview);if(pieceKeys[pieceIndex]==='gutter'){connectionGhost=createDelight('waterWheel');connectionGhost.traverse(o=>{if(o.isMesh){o.material=new THREE.MeshBasicMaterial({color:'#81d6da',transparent:true,opacity:.19,depthWrite:false});o.castShadow=false;}});scene.add(connectionGhost);}}updateHUD();}
 function cycle(delta){if(tool===5){pieceIndex=(pieceIndex+delta+pieceKeys.length)%pieceKeys.length;level=pieceKeys[pieceIndex]==='roof'?1:0;}else{do{seedIndex=(seedIndex+delta+seedKeys.length)%seedKeys.length;}while(!seedUnlocked(state,seedKeys[seedIndex]));if(tool!==1)tool=1;}chooseTool(tool);}
 function browse(delta){if(tool===1||tool===5)cycle(delta);else chooseTool((tool+delta+tools.length)%tools.length);}
 function updateHUD(){
@@ -199,12 +210,12 @@ function updateHUD(){
  $('resources').innerHTML=Object.entries(state.inventory).map(([k,v])=>`<div class="resource" tabindex="0" data-word="material.${k}" data-icon="${k}" title="${t('material.'+k)}" aria-label="${t('ui.inventoryCount',{material:t('material.'+k),count:v})}">${icon(k)}<span>${t('material.'+k)}</span><b>${v}</b></div>`).join('');
  $('toolbar').innerHTML=tools.map((item,i)=>`<button class="${i===tool?'active':''}" data-tool="${i}" data-word="tool.${item.key}" data-picture="tool:${item.key}" aria-label="${t('action.'+item.key)}" aria-pressed="${i===tool}"><small>${i+1}</small><span class="toolPic">${['seed','fill','build','remove'].includes(item.key)?icon(item.key):picture('tool:'+item.key,t('tool.'+item.key))}</span>${t('action.'+item.key)}</button>`).join('');
  $('toolbar').querySelectorAll('button').forEach(b=>b.onclick=()=>chooseTool(Number(b.dataset.tool)));
- const seed=seedKeys[seedIndex],part=pieceKeys[pieceIndex],material=MATERIALS[materialIndex];
- $('selectedName').textContent=tool===1?t('ui.seedChoice',{noun:t('tree.'+seed)}):tool===5?t('ui.pieceChoice',{piece:t('piece.'+part),material:t('material.'+material)}):t('tool.'+tools[tool].key);
- $('selectedPicture').innerHTML=picture(tool===1?'seed:'+seed:tool===5?`piece:${part}:${material}`:'tool:'+tools[tool].key,$('selectedName').textContent);
- $('selectedDetail').textContent=tool===1?t('ui.chooseSeed'):tool===5?t('ui.buildCost',{count:PIECES[part].cost,material:t('material.'+material),level}):t(tool===4?'ui.holdChop':tool===3?'ui.holdWater':'ui.clickUse');
+ const seed=seedKeys[seedIndex],part=pieceKeys[pieceIndex],material=isToy()?DELIGHTS[part].material:MATERIALS[materialIndex];
+ $('selectedName').textContent=tool===1?t('ui.seedChoice',{noun:t('tree.'+seed)}):tool===5?(isToy()?t('prop.'+part):t('ui.pieceChoice',{piece:t('piece.'+part),material:t('material.'+material)})):t('tool.'+tools[tool].key);
+ $('selectedPicture').innerHTML=picture(tool===1?'seed:'+seed:tool===5?(isToy()?'prop:'+part:`piece:${part}:${material}`):'tool:'+tools[tool].key,$('selectedName').textContent);
+ $('selectedDetail').textContent=tool===1?t('ui.chooseSeed'):tool===5?t('ui.buildCost',{count:(DELIGHTS[part]??PIECES[part]).cost,material:t('material.'+material),level}):t(tool===4?'ui.holdChop':tool===3?'ui.holdWater':'ui.clickUse');
  $('buildActions').hidden=tool!==5;
- if(tool===5){$('buildActions').innerHTML=`<button id="changeMaterial" aria-label="${t('aria.changeMaterial')}">${icon(material)}</button><button id="rotatePiece" aria-label="${t('aria.rotate')}">${icon('rotate')}</button><button id="lowerPiece" aria-label="${t('aria.lower')}">−</button><button id="raisePiece" aria-label="${t('aria.raise')}">+</button>`;$('changeMaterial').onclick=()=>{materialIndex=(materialIndex+1)%MATERIALS.length;chooseTool(5);};$('rotatePiece').onclick=rotateChoice;$('lowerPiece').onclick=()=>{level=Math.max(0,level-1);updateHUD();};$('raisePiece').onclick=()=>{level=Math.min(3,level+1);updateHUD();};}
+ if(tool===5){$('buildActions').innerHTML=`<button id="changeMaterial" aria-label="${t('aria.changeMaterial')}">${icon(material)}</button><button id="rotatePiece" aria-label="${t('aria.rotate')}">${icon('rotate')}</button><button id="lowerPiece" aria-label="${t('aria.lower')}">−</button><button id="raisePiece" aria-label="${t('aria.raise')}">+</button>`;$('changeMaterial').hidden=isToy();$('lowerPiece').hidden=isToy();$('raisePiece').hidden=isToy();$('changeMaterial').onclick=()=>{materialIndex=(materialIndex+1)%MATERIALS.length;chooseTool(5);};$('rotatePiece').onclick=rotateChoice;$('lowerPiece').onclick=()=>{level=Math.max(0,level-1);updateHUD();};$('raisePiece').onclick=()=>{level=Math.min(3,level+1);updateHUD();};}
  updateJournal();
 }
 const steps=[['shovel',0],['seed',1],['fill',2],['hose',3],['grow',null],['axe',4],['build',5]];
@@ -233,7 +244,9 @@ function updateJournal(){
 function showCatalog(show=true){clearReading();if(show){audio.pause();clearEffects();}resetActions();$('wardrobe').hidden=true;outfitResident=null;catalogOpen=show;$('catalog').hidden=!show;held=false;keys.clear();if(show){locked=false;document.exitPointerLock?.();$('overlay').hidden=true;renderCatalog();$('bookLanguage').focus({preventScroll:true});}else{requestLock();}}
 function renderCatalog(){
  $('seedCards').innerHTML=seedKeys.map((k,i)=>{const spec=SEEDS[k],unlocked=seedUnlocked(state,k),noun=t('tree.'+k);return `<button aria-disabled="${!unlocked}" class="card ${unlocked?'':'seedLocked'} ${i===seedIndex?'chosen':''}" data-seed="${i}" data-word="tree.${k}" data-picture="seed:${k}" aria-label="${t('ui.plantChoice',{noun})}${unlocked?'':'. '+t('ui.lockedSeed')}" aria-pressed="${i===seedIndex}">${picture('seed:'+k,t('ui.maturePicture',{noun}))}${unlocked?'':`<span class="chosenMark">${icon('lock')}</span>`}${i===seedIndex?`<span class="chosenMark">${icon('check')}</span>`:''}<b>${noun}</b><small>${icon(spec.resource)} +${spec.yield}</small></button>`;}).join('');
- $('pieceCards').innerHTML=pieceKeys.map((k,i)=>`<button class="card ${i===pieceIndex?'chosen':''}" data-piece="${i}" data-word="piece.${k}" data-picture="piece:${k}:${MATERIALS[materialIndex]}" aria-label="${t('ui.buildChoice',{piece:t('piece.'+k)})}">${picture(`piece:${k}:${MATERIALS[materialIndex]}`,t('piece.'+k))}<b>${t('piece.'+k)}</b><small>${icon(MATERIALS[materialIndex])} ${PIECES[k].cost}</small></button>`).join('');
+ $('pieceCards').innerHTML=Object.keys(PIECES).map((k,i)=>`<button class="card ${i===pieceIndex?'chosen':''}" data-piece="${i}" data-word="piece.${k}" data-picture="piece:${k}:${MATERIALS[materialIndex]}" aria-label="${t('ui.buildChoice',{piece:t('piece.'+k)})}">${picture(`piece:${k}:${MATERIALS[materialIndex]}`,t('piece.'+k))}<b>${t('piece.'+k)}</b><small>${icon(MATERIALS[materialIndex])} ${PIECES[k].cost}</small></button>`).join('');
+ $('toyCards').innerHTML=DELIGHT_KEYS.map(k=>{const d=DELIGHTS[k];return `<button class="card ${pieceKeys[pieceIndex]===k?'chosen':''}" data-toy="${k}" data-word="prop.${k}" data-picture="prop:${k}" aria-label="${t('prop.'+k)}">${picture('prop:'+k,t('prop.'+k))}<b>${t('prop.'+k)}</b><small>${icon(d.material)} ${d.cost}</small></button>`;}).join('');
+ $('toyCards').querySelectorAll('button').forEach(b=>b.onclick=()=>{pieceIndex=pieceKeys.indexOf(b.dataset.toy);level=0;chooseTool(5);showCatalog(false);});
  $('materialCards').innerHTML=MATERIALS.map((m,i)=>`<button data-material="${i}" data-word="material.${m}" data-picture="piece:wall:${m}" class="${i===materialIndex?'chosen':''}" aria-label="${t('ui.materialChoice',{material:t('material.'+m)})}" aria-pressed="${i===materialIndex}">${picture('piece:wall:'+m,t('material.'+m))}${t('material.'+m)}</button>`).join('');
  $('seedCards').querySelectorAll('button').forEach(b=>b.onclick=()=>{if(!seedUnlocked(state,seedKeys[Number(b.dataset.seed)]))return;seedIndex=Number(b.dataset.seed);chooseTool(1);showCatalog(false);});
  $('pieceCards').querySelectorAll('button').forEach(b=>b.onclick=()=>{pieceIndex=Number(b.dataset.piece);level=pieceKeys[pieceIndex]==='roof'?1:0;chooseTool(5);showCatalog(false);});
@@ -286,7 +299,7 @@ document.addEventListener('keydown',e=>{
 });
 document.addEventListener('keyup',e=>keys.delete(e.code));window.addEventListener('blur',()=>{audio.pause();keys.clear();resetActions();save();});
 window.addEventListener('focus',()=>{if(locked)audio.start();});
-canvas.addEventListener('mousedown',e=>{menuReading=null;document.activeElement?.blur();audio.start();if(e.button===2&&locked)rightDrag=true;if(e.button===0&&locked){held=true;if(tool!==3&&tool!==4)act();}});document.addEventListener('mouseup',()=>{resetActions();rightDrag=false;});canvas.addEventListener('contextmenu',e=>e.preventDefault());
+canvas.addEventListener('mousedown',e=>{menuReading=null;document.activeElement?.blur();audio.start();if(e.button===2&&locked)rightDrag=true;if(e.button===0&&locked){if(target?.propId&&tool<5){act();held=true;}else{held=true;if(tool!==3&&tool!==4)act();}}});document.addEventListener('mouseup',()=>{resetActions();rightDrag=false;});canvas.addEventListener('contextmenu',e=>e.preventDefault());
 document.addEventListener('wheel',e=>{
  const enabled=locked&&!catalogOpen&&!e.target.closest('#catalog');
  const delta=wheelStep(wheel,e.deltaY,e.deltaMode,performance.now(),enabled);
@@ -299,21 +312,28 @@ function pick(){
  if(hits.length){const hit=hits[0],data=hit.object.userData;
   if(data.wildId){const r=WILD_RESOURCES.find(r=>r.id===data.wildId);if(r)target={gx:r.gx,gz:r.gz,wildId:r.id,point:hit.point,baseY:0};}
   else if(data.plot){const p=state.plots[data.plot];if(p)target={gx:p.gx,gz:p.gz,plot:data.plot,point:hit.point,baseY:0};}
+  else if(data.propId){const p=state.delights.find(p=>p.id===data.propId);if(p)target={gx:p.gx,gz:p.gz,propId:p.id,point:hit.point,baseY:p.baseY};}
   else if(data.buildId){const b=state.buildings.find(b=>b.id===data.buildId);if(b){let gx=b.gx,gz=b.gz;
    if(wallLike(b)){const interiors=adjacentCells(b),floor=interiors.find(c=>state.buildings.some(f=>f.kind==='floor'&&f.gx===c.gx&&f.gz===c.gz&&baseOf(f)===baseOf(b)));if(floor){gx=floor.gx;gz=floor.gz;}}
    target={gx,gz,buildId:b.id,point:hit.point,baseY:baseOf(b)};}}
   else if(data.seabed)target={gx:Math.round(hit.point.x/2),gz:Math.round(hit.point.z/2),point:hit.point,baseY:buildBase(Math.round(hit.point.x/2),Math.round(hit.point.z/2))??terrainHeight(hit.point.x,hit.point.z)};
   else if(hit.instanceId!==undefined){target={...groundCells[hit.instanceId],point:hit.point,baseY:0};}
  }
- if(target){target.distance=camera.position.distanceTo(target.point);const plant=state.plots[cellKey(target.gx,target.gz)];target.outOfReach=target.distance>((target.wildId||plant?.growth>=1)?3.8:6);}
+ if(tool===4&&!target?.wildId&&!target?.plot&&!target?.buildId&&!target?.propId){
+  const flower=flowerTarget(raycaster.ray,flowerEnvelopes.values(),[...interactive,world.group,ocean,...garden.discoveries.values()]);
+  if(flower){const r=WILD_RESOURCES.find(r=>r.id===flower.id);target={gx:r.gx,gz:r.gz,wildId:r.id,point:flower.point,baseY:0};}
+ }
+ if(target){target.distance=camera.position.distanceTo(target.point);const plant=state.plots[cellKey(target.gx,target.gz)];target.outOfReach=target.distance>(target.propId&&tool<5?3:(target.wildId||plant?.growth>=1)?3.8:6);}
  tileOutline.visible=!!target&&locked&&!target.outOfReach;if(target)tileOutline.position.set(target.gx*2,(target.baseY??0)+.035,target.gz*2);
- if(preview){preview.visible=!!target&&locked&&!target.outOfReach;if(target){const b=selectedBuild();preview.position.set(b.gx*2,baseOf(b)+b.level*2.4,b.gz*2);preview.rotation.y=b.rotation*Math.PI/2;const valid=validateBuild(state,b).ok&&!intersectsPlayer(b)&&!marineLife.overlapsBuilding(b);preview.traverse(o=>{if(o.isMesh)o.material.color.set(valid?'#d8f5a5':'#f49471');});}}
+ if(preview){preview.visible=!!target&&locked&&!target.outOfReach;if(target){const b=selectedBuild();preview.position.set(b.gx*2,(isToy()?b.baseY:baseOf(b)+b.level*2.4),b.gz*2);preview.rotation.y=b.rotation*Math.PI/2;const valid=placementResult(b).ok;preview.traverse(o=>{if(o.isMesh)o.material.color.set(valid?'#d8f5a5':'#f49471');});}}
+ if(connectionGhost){connectionGhost.visible=!!target&&locked&&!target.outOfReach;if(target){const b=selectedBuild(),[dx,dz]=rotateXZ(2,0,b.rotation);connectionGhost.position.set(b.gx*2+dx,b.baseY,b.gz*2+dz);connectionGhost.rotation.y=b.rotation*Math.PI/2;}}
  let label='';if(target&&locked){const p=state.plots[cellKey(target.gx,target.gz)];
   if(target.outOfReach)label=t('target.closer');
   else if(target.wildId){const r=WILD_RESOURCES.find(r=>r.id===target.wildId);label=tool===4?t(isFlower(r.kind)?'target.gatherFlowers':'target.chop'):t('target.wild',{noun:t('tree.'+r.kind)});}
   else
-  if(tool===5){const b=selectedBuild(),v=validateBuild(state,b);label=v.ok?(intersectsPlayer(b)?t('message.stepAside'):marineLife.overlapsBuilding(b)?t('message.creatureRoom'):''):i18n.message(v);}
-  else if(tool===6)label=t(target.buildId?'target.remove':'target.building');
+  if(tool===5){const v=placementResult(selectedBuild());label=v.ok?'':i18n.message(v);}
+  else if(tool===6)label=t(target.buildId||target.propId?'target.remove':'target.building');
+  else if(target.propId){const q=state.delights.find(p=>p.id===target.propId);label=toyHint(q);}
   else if(p?.seed)label=t('tree.'+p.seed)+' · '+(p.phase==='hole'?t('target.seed'):p.growth>=1?t('target.ready'):t('target.progress',{growth:Math.floor(p.growth*100),water:Math.round(p.water*100)}))+(p.phase==='filled'&&p.growth<1?'\n'+t(p.water<.2?'target.needsWater':'target.growing'):'');
   else label=p?.phase==='hole'?t('target.hole'):tool===0?t('target.dig'):tool===1?t('target.digFirst'):'';
  }$('targetLabel').textContent=label;updateTargetCue();
@@ -321,8 +341,8 @@ function pick(){
 function updateTargetCue(){
  const p=target&&state.plots[cellKey(target.gx,target.gz)],r=target?.wildId&&WILD_RESOURCES.find(r=>r.id===target.wildId);
  let stage=r?5:stageFor(p),name=steps[stage][0],required=steps[stage][1],progress=stage===4?(p?.growth??0)*100:0,wrong=false,blocked=false;
- if(tool===5){name='build';required=5;blocked=target&&(!validateBuild(state,selectedBuild()).ok||intersectsPlayer(selectedBuild())||marineLife.overlapsBuilding(selectedBuild()));}
- else if(tool===6){name='remove';required=6;blocked=!target?.buildId;}
+ if(tool===5){name='build';required=5;blocked=target&&!placementResult(selectedBuild()).ok;}
+ else if(tool===6){name='remove';required=6;blocked=!target?.buildId&&!target?.propId;}
  else if(tool===0&&target&&!target.wildId)blocked=worldBlocked(state,target.gx,target.gz);
  if(stage===5){name=isFlower(r?.kind)||isFlower(p?.seed)?'hand':'axe';if(chopProgress)progress=chopProgress*100;}
  if(tool===3&&p?.seed&&p.phase==='filled'&&p.growth<1){name='hose';required=3;progress=p.water*100;}
@@ -356,18 +376,37 @@ function pickup(result,x,z){
  const colors={wood:'#bc8955',copper:'#db9258',iron:'#b9cdd1',diamond:'#83dbe2',fiber:'#b9cd89'};
  for(let i=0;i<4;i++){const m=new THREE.Mesh(result.resource==='diamond'?new THREE.OctahedronGeometry(.17):new THREE.BoxGeometry(.22,.2,.25),new THREE.MeshStandardMaterial({color:colors[result.resource],metalness:['copper','iron'].includes(result.resource)?.3:0,roughness:.55}));addEffect(m,x,.8,z,1.6,new THREE.Vector3(Math.cos(i*1.7)*1.3,2.4+i*.2,Math.sin(i*1.7)*1.3),true);}
 }
+function liftBodies(){return [{id:'player',x:pos.x,z:pos.z,feet,height:1.65,radius:.24},...(residents?.bodies?.()??[])];}
+function placementResult(b){
+ if(!b)return {ok:false,code:'message.closer'};
+ if(!isToy())return intersectsPlayer(b)?{ok:false,code:'message.stepAside'}:marineLife.overlapsBuilding(b)?{ok:false,code:'message.creatureRoom'}:validateBuild(state,b);
+ const check=validateDelight(state,b);if(!check.ok)return check;
+ const volumes=propBoxes(b,{envelope:true});
+ if(liftBodies().some(body=>volumes.some(a=>touches(a,body.x,body.z,body.radius)&&a.maxY>body.feet+.02&&a.minY<body.feet+body.height)))return {ok:false,code:'message.stepAside'};
+ if(volumes.some(a=>reefSolids.some(r=>boxesOverlap(a,r,.001))))return {ok:false,code:'message.toyClearance'};
+ if(marineLife.animals.some(a=>volumes.some(b=>touches(b,a.x,a.z,a.profile.radius)&&b.maxY>a.y+a.profile.minY&&b.minY<a.y+a.profile.maxY)))return {ok:false,code:'message.creatureRoom'};
+ return check;
+}
+function toyHint(p){const q=delights.motion.get(p.id);if(p.kind==='gutter')return t(q?.connectedTo?'ui.toyPour':'ui.toyConnect');if(p.kind==='waterWheel'&&!q?.connectedTo)return t('ui.toyBell');if(p.kind==='lamp'&&!q?.connectedTo)return t('ui.toyLamp');return '';}
+function updateToyButton(){const p=target?.propId&&state.delights.find(p=>p.id===target.propId),show=locked&&tool<5&&!!p&&!target.outOfReach;$('useButton').hidden=!show;$('hud').classList.toggle('usingToy',show);if(!show)return;tileOutline.visible=false;const pouring=p.kind==='gutter',key=p.kind+':'+i18n.language;if($('useButton').dataset.content===key)return;$('useButton').dataset.content=key;$('useButton').innerHTML=picture('prop:'+p.kind,t('prop.'+p.kind))+icon(pouring?'hose':'hand');$('useButton').setAttribute('aria-label',pouring?t('ui.toyPour'):t('ui.toyUse',{noun:t('prop.'+p.kind)}));}
+$('useButton').onmousedown=e=>{e.preventDefault();e.stopPropagation();audio.start();const p=state.delights.find(p=>p.id===target?.propId);if(p?.kind==='gutter'&&!target.outOfReach){if(tool!==3)chooseTool(3);held=true;}};
+$('useButton').onclick=e=>{e.stopPropagation();const p=state.delights.find(p=>p.id===target?.propId);if(!p||target.outOfReach)return;if(p.kind==='gutter'){if(tool!==3)chooseTool(3);}else delights.use(p.id);};
 function act(){
+ if(tool<5&&target?.propId&&!target.outOfReach){if(state.delights.find(p=>p.id===target.propId)?.kind==='gutter'){if(tool!==3)chooseTool(3);return;}delights.use(target.propId);dirty=true;save();return;}
  if(!target||target.outOfReach){toast('message.closer');failureUntil=elapsed+.8;return;}
  if(target.wildId){toast('message.axeWild');failureUntil=elapsed+.8;return;}
- const {gx,gz}=target;let result;
+ const {gx,gz}=target,removedProp=state.delights.find(p=>p.id===target.propId),removedMaterial=removedProp?DELIGHTS[removedProp.kind].material:state.buildings.find(b=>b.id===target.buildId)?.material;let result;
  if(tool===0)result=dig(state,gx,gz);if(tool===1)result=plant(state,gx,gz,seedKeys[seedIndex]);if(tool===2)result=fill(state,gx,gz);
- if(tool===5){const b=selectedBuild();result=intersectsPlayer(b)?{ok:false,code:'message.stepAside',params:{}}:marineLife.overlapsBuilding(b)?{ok:false,code:'message.creatureRoom',params:{}}:build(state,b);}
- if(tool===6)result=remove(state,target.buildId);
- if(result){if(!result.ok)failureUntil=elapsed+.8;toast(result);if(result.ok){dirty=true;swing=.25;audio.play(['dig','plant','fill','water','harvest','build','remove'][tool]);burst(gx,gz,undefined,target.baseY??0);sync();save();}}
+ if(tool===5){const b=selectedBuild();const check=placementResult(b);result=check.ok?(isToy()?placeDelight(state,b):build(state,b)):check;}
+ if(tool===6){const p=state.delights.find(p=>p.id===target.propId);result=p?removeDelight(state,p.id,{occupied:p.kind==='lift'&&liftRiders(p,liftBodies()).length>0}):remove(state,target.buildId);}
+ if(result){if(!result.ok)failureUntil=elapsed+.8;toast(result);if(result.ok){dirty=true;swing=.25;audio.play(['dig','plant','fill','water','harvest','build','remove'][tool],{material:tool===5?(isToy()?DELIGHTS[pieceKeys[pieceIndex]].material:MATERIALS[materialIndex]):tool===6?removedMaterial:undefined,x:gx*2,y:target.baseY??0,z:gz*2});burst(gx,gz,undefined,target.baseY??0);sync();save();}}
 }
-function resize(){camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);placeTool();}window.addEventListener('resize',resize);
-residents=createResidentSystem({scene,getState:()=>state,getPlayer:()=>pos,canStand:residentCanStand,floorHeight:residentFloor,changed:()=>{dirty=true;},notice:r=>{audio.play('discover');toast(r.habitat==='ocean'?'message.diver':'message.neighbour');}});
-garden=createGardenSystem({scene,getState:()=>state,getPlayer:()=>pos,canStand:(x,z)=>residentCanStand(x,z)&&!state.buildings.some(b=>Math.abs(x-b.gx*2)<1.7&&Math.abs(z-b.gz*2)<1.7),treeHeight:key=>plantMeshes.get(key)?.userData.perchHeight??3.5,onDiscover:r=>{dirty=true;audio.play('discover');lastReward={seed:r.seed,newSeed:r.newSeed};renderReward();rewardUntil=elapsed+5;$('reward').classList.add('show');toast(r.newSeed?'message.newSeed':'message.secret');burst(Math.round(pos.x/2),Math.round(pos.z/2),'#eddb90');updateHUD();save();}});
+function layoutContextActions(){const host=$(innerWidth<=760?'actionReadRow':'contextActions'),button=$('useButton');if(button.parentElement!==host)host.prepend(button);}
+layoutContextActions();
+function resize(){camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);placeTool();layoutContextActions();}window.addEventListener('resize',resize);
+delights=createDelightSystem({scene,getState:()=>state,getPlayer:()=>pos,changed:()=>{dirty=true;},event:(kind,point)=>{audio.play(kind,point);if(kind==='bell')marineLife.greet?.(point);},getBodies:liftBodies,moveRiders:(ids,delta)=>{if(ids.includes('player')){feet+=delta;vy=0;}residents?.carry?.(ids,delta);},obstacles:id=>[...state.buildings.flatMap(boxes),...state.delights.flatMap(p=>p.id===id?propBoxes(p).slice(0,-1):propBoxes(p)),...reefSolids]});
+residents=createResidentSystem({scene,getState:()=>state,getPlayer:()=>pos,canStand:residentCanStand,floorHeight:residentFloor,getDelights:()=>delights,getWindows:()=>marineLife.windows,changed:()=>{dirty=true;},notice:r=>{audio.play('discover');toast(r.habitat==='ocean'?'message.diver':'message.neighbour');}});
+garden=createGardenSystem({scene,getState:()=>state,getPlayer:()=>pos,canStand:(x,z)=>residentCanStand(x,z)&&!state.buildings.some(b=>Math.abs(x-b.gx*2)<1.7&&Math.abs(z-b.gz*2)<1.7),getDelights:()=>delights,flyClear:(x,y,z,own)=>![...state.buildings.flatMap(boxes),...state.delights.filter(p=>p.id!==own).flatMap(p=>propBoxes(p))].some(a=>touches(a,x,z,.13)&&a.maxY>y&&a.minY<y+.3),treeHeight:key=>plantMeshes.get(key)?.userData.perchHeight??3.5,onDiscover:r=>{dirty=true;audio.play('discover');lastReward={seed:r.seed,newSeed:r.newSeed};renderReward();rewardUntil=elapsed+5;$('reward').classList.add('show');toast(r.newSeed?'message.newSeed':'message.secret');burst(Math.round(pos.x/2),Math.round(pos.z/2),'#eddb90');updateHUD();save();}});
 let currentReading=null,menuReading=null,lastReadingHTML='',lastReadingAt=0;
 const readingFocus=createReadingFocus(),readingRay=new THREE.Raycaster();readingRay.far=12;
 function clearReading(){readingFocus.clear();menuReading=currentReading=null;renderReading();}
@@ -399,14 +438,16 @@ function updateReading(now){
  for(const [id,g] of wildMeshes){const r=WILD_RESOURCES.find(x=>x.id===id);add(g,{id:'wild:'+id,key:'tree.'+r.kind,picture:'seed:'+r.kind});}
  for(const [id,g] of plantMeshes){const p=state.plots[id];if(p?.seed)add(g,{id:'plot:'+id,key:'tree.'+p.seed,picture:'seed:'+p.seed});}
  for(const [id,g] of buildMeshes){const b=state.buildings.find(x=>x.id===id);add(g,{id:'build:'+id,key:'piece.'+b.kind,material:b.material,picture:`piece:${b.kind}:${b.material}`});}
+ for(const [id,g] of delights.models){const p=state.delights.find(p=>p.id===id);add(g,{id:'prop:'+id,key:'prop.'+p.kind,picture:'prop:'+p.kind});}
  for(const [id,g] of residents.models){const r=state.residents.find(x=>x.id===id);if(r?.x!==null)add(g,{id:'resident:'+id,key:r.habitat==='ocean'?'noun.diver':'noun.resident',picture:`${r.habitat==='ocean'?'diver':'resident'}:${r.variant}:${r.outfit??0}`});}
  for(const a of garden.readingObjects())add(a.model,{id:`animal:${a.kind}:${a.index}`,key:'animal.'+a.kind,picture:'animal:'+a.kind});
  for(const {actor:a,model} of marine)add(model,{id:'marine:'+a.id,focusKey:'marine:'+a.kind,key:'animal.'+a.kind,picture:'animal:'+a.kind+(a.kind==='fish'?':'+a.variant:'')});
+ add(whale.model,{id:'marine:whale',key:'animal.whale',picture:'animal:whale'});
  add(ground,{id:'ground',key:'noun.grass',icon:'grass'});add(seabed,{id:'sand',key:'noun.sand',icon:'fill'});
  readingRay.setFromCamera(center,camera);
  const readingObjects=[...roots,world.group,ocean,...garden.discoveries.values(),plotsGroup];
  const describeHits=raw=>raw.filter(hit=>{
-  for(let o=hit.object;o;o=o.parent)if(!o.visible)return false;return true;
+  for(let o=hit.object;o;o=o.parent)if(!o.visible)return false;if(hit.object.userData.readThrough)return false;return true;
  }).map(hit=>{
   let semantic=null;for(let o=hit.object;o;o=o.parent)if(o.userData.reading){semantic=o.userData.reading;break;}
   if(hit.object===ground&&hit.instanceId!==undefined){const c=groundCells[hit.instanceId],p=state.plots[cellKey(c.gx,c.gz)];if(p)semantic={id:'soil:'+cellKey(c.gx,c.gz),key:p.phase==='hole'?'noun.hole':'noun.soil',icon:'fill'};}
@@ -414,7 +455,12 @@ function updateReading(now){
   const material=hit.object.material,opaque=!material?.transparent||material.opacity>.75;
   return {distance:hit.distance,semantic,opaque};
  });
- const direct=nearestReading(describeHits(readingRay.intersectObjects(readingObjects,true))),candidates=[];
+ let direct=nearestReading(describeHits(readingRay.intersectObjects(readingObjects,true)));const candidates=[];
+ // The gather envelope already requires a live, reachable mesh visibility witness.
+ // Teach the same visible flower rather than the grass between its stems.
+ if(tool===4&&target?.wildId&&flowerEnvelopes.has(target.wildId)&&!target.outOfReach&&(!direct||['noun.grass','noun.soil'].includes(direct.key))){
+  const r=WILD_RESOURCES.find(r=>r.id===target.wildId);direct={id:'wild:'+r.id,key:'tree.'+r.kind,picture:'seed:'+r.kind};
+ }
  if(!direct||['noun.grass','noun.sand','noun.soil','noun.hole'].includes(direct.key)){
   const forward=camera.getWorldDirection(new THREE.Vector3()),point=new THREE.Vector3(),direction=new THREE.Vector3();
   for(const {actor:a,model} of marine){
@@ -440,7 +486,7 @@ function setupLocaleUI(){
  setupReadingEvents();localizeUI(false);
 }
 function localizeUI(refresh=true){
- const active=document.activeElement,focusId=active?.id,focusData=['seed','piece','material','outfit'].find(k=>active?.dataset[k]!==undefined),focusValue=focusData&&active.dataset[focusData];
+ const active=document.activeElement,focusId=active?.id,focusData=['seed','piece','material','outfit','toy'].find(k=>active?.dataset[k]!==undefined),focusValue=focusData&&active.dataset[focusData];
  const scroll=$('catalog').scrollTop,wardrobeScroll=$('wardrobe').scrollTop;
  document.documentElement.lang=i18n.language;document.title=t('ui.title');
  document.querySelectorAll('[data-i18n]').forEach(el=>el.textContent=t(el.dataset.i18n));
@@ -457,35 +503,35 @@ function localizeUI(refresh=true){
 }
 
 setupLocaleUI();setupPictures();setupLivingUI();sync();chooseTool(0);if(loadWarning){$('welcomeSave').textContent=t(loadWarning);saveStatus('ui.loadFailed');}
-const timing=[];let previous=performance.now(),frames=0,livingTime=0;
+const timing=[];let previous=performance.now(),frames=0,livingTime=0,stepDistance=0;
 function frame(now){
  requestAnimationFrame(frame);const realDt=(now-previous)/1000,dt=Math.min(realDt,.1);previous=now;elapsed+=dt;if(realDt<1){timing.push(realDt*1000);if(timing.length>180)timing.shift();}
  if(locked){
   if(fallbackLook){if(keys.has('ArrowLeft'))yaw+=dt*1.4;if(keys.has('ArrowRight'))yaw-=dt*1.4;if(keys.has('ArrowUp'))pitch+=dt*1.1;if(keys.has('ArrowDown'))pitch-=dt*1.1;pitch=Math.max(-1.45,Math.min(1.45,pitch));}
-  livingTime+=dt;tick(state,dt);residents.update(dt,livingTime);garden.update(dt,livingTime);const speed=keys.has('ShiftLeft')?7:4.2;let dx=0,dz=0;
+  livingTime+=dt;tick(state,dt);residents.update(dt,livingTime);delights.update(dt,livingTime);garden.update(dt,livingTime);for(const g of buildMeshes.values())animateCraftPiece(g,{time:livingTime,wind:.6});const speed=keys.has('ShiftLeft')?7:4.2;let dx=0,dz=0;
   if(keys.has('KeyW'))dz-=1;if(keys.has('KeyS'))dz+=1;if(keys.has('KeyA'))dx-=1;if(keys.has('KeyD'))dx+=1;
   const length=Math.hypot(dx,dz)||1;dx=dx/length*speed*dt;dz=dz/length*speed*dt;
   const wx=dx*Math.cos(yaw)+dz*Math.sin(yaw),wz=dz*Math.cos(yaw)-dx*Math.sin(yaw);
-  if(canWalk(pos.x+wx,pos.z))pos.x+=wx;if(canWalk(pos.x,pos.z+wz))pos.z+=wz;
+  const oldX=pos.x,oldZ=pos.z;if(canWalk(pos.x+wx,pos.z))pos.x+=wx;if(canWalk(pos.x,pos.z+wz))pos.z+=wz;stepDistance+=Math.hypot(pos.x-oldX,pos.z-oldZ);if(stepDistance>.95&&!swimmingAt(pos.x,pos.z,feet)&&Math.abs(feet-floorAt(pos.x,pos.z))<.1){stepDistance=0;const floor=state.buildings.find(b=>b.kind==='floor'&&Math.abs(b.gx*2-pos.x)<1&&Math.abs(b.gz*2-pos.z)<1);audio.play('step',{material:floor?.material??'wood',x:pos.x,y:feet,z:pos.z,volume:.18});}
   const beforeFeet=feet;
-  const floor=floorAt(pos.x,pos.z),ceil=reefCeiling(reefSolids,pos.x,pos.z,feet,Math.min(Infinity,...state.buildings.flatMap(boxes).filter(a=>touches(a,pos.x,pos.z)&&a.minY>=feet+1.6).map(a=>a.minY)));
+  const floor=floorAt(pos.x,pos.z),ceil=reefCeiling(reefSolids,pos.x,pos.z,feet,Math.min(Infinity,...[...state.buildings.flatMap(boxes),...state.delights.flatMap(p=>propBoxes(p))].filter(a=>touches(a,pos.x,pos.z)&&a.minY>=feet+1.6).map(a=>a.minY)));
   const vertical=verticalStep({x:pos.x,z:pos.z,feet,vy,dt,forward:(keys.has('KeyW')?1:0)-(keys.has('KeyS')?1:0),pitch,rise:keys.has('Space'),dive:keys.has('KeyC')||keys.has('ControlLeft')||keys.has('ControlRight'),floor,ceil});feet=vertical.feet;vy=vertical.vy;
   if(dx||dz||feet!==beforeFeet||Object.values(state.plots).some(p=>p.growth<1&&p.water>0))dirty=true;
-  marineLife.update(dt,{x:pos.x,y:feet+1.65,z:pos.z});poseMarine(dt);
+  marineLife.update(dt,{x:pos.x,y:feet+1.65,z:pos.z});poseMarine(dt);whale.update(dt,pos);
   if(cover)animateMeadowCover(cover,{time:livingTime});
 
  }
  // Spend the shadow map on the nearby world, including ocean houses, not the whole distant orchard.
  const shadowX=Math.round(pos.x/2)*2,shadowZ=Math.round(pos.z/2)*2,shadowY=terrainHeight(pos.x,pos.z);sun.target.position.set(shadowX,shadowY,shadowZ);sun.position.set(shadowX-24,shadowY+38,shadowZ+16);
- camera.position.set(pos.x,feet+1.7,pos.z);camera.rotation.set(pitch,yaw,0,'YXZ');camera.updateMatrixWorld();pick();updateReading(now);
- // Reading a foreground creature must not suggest cultivating the sand behind it.
+ camera.position.set(pos.x,feet+1.7,pos.z);camera.rotation.set(pitch,yaw,0,'YXZ');camera.updateMatrixWorld();pick();updateReading(now);updateToyButton();
+ // Watching a resident or paid home must not suggest cultivating its occupied floor.
  // This is presentation only: building/removal feedback and the action ray stay intact.
- const watchingMarine=locked&&!menuReading&&currentReading?.id?.startsWith('marine:')&&tool<5&&!target?.buildId&&!target?.wildId&&!target?.plot;
+ const watchingMarine=locked&&!menuReading&&tool<5&&!target?.propId&&!target?.wildId&&!target?.plot&&(currentReading?.id?.startsWith('marine:')||currentReading?.id?.startsWith('resident:')||target?.buildId);
  $('hud').classList.toggle('watchingMarine',!!watchingMarine);if(watchingMarine)tileOutline.visible=false;
- const underwater=camera.position.y<TERRAIN.waterY;$('hud').classList.toggle('inOcean',pos.z>30);scene.background=underwater?seaBackground:dayBackground;scene.fog.color.set(underwater?'#5c9fa7':'#b7d7d7');scene.fog.near=underwater?8:38;scene.fog.far=underwater?48:118;waterSurface.material.opacity=underwater?.18:.48;
+ const underwater=camera.position.y<TERRAIN.waterY;if(locked)audio.environment({x:pos.x,y:camera.position.y,z:pos.z,yaw,underwater});$('hud').classList.toggle('inOcean',pos.z>30);scene.background=underwater?seaBackground:dayBackground;scene.fog.color.set(underwater?'#5c9fa7':'#b7d7d7');scene.fog.near=underwater?8:38;scene.fog.far=underwater?48:118;waterSurface.material.opacity=underwater?.18:.48;
  const swimMode=!locked||pos.z<23?'hidden':swimmingAt(pos.x,pos.z,feet)?'swim':'shore';if(swimMode!==swimHudMode){swimHudMode=swimMode;$('swimCue').hidden=swimMode==='hidden';$('swimCue').innerHTML=icon('swim')+(swimMode==='swim'?`<span>↑ <kbd>${t('control.space')}</kbd> &nbsp; ↓ <kbd>C</kbd></span>`:`<span>${icon('reef')} ↓</span>`);}
  stream.visible=false;
- if(locked&&held&&tool===3&&target&&!target.outOfReach&&!target.wildId){const result=water(state,target.gx,target.gz,dt);if(result.ok){dirty=true;stream.visible=true;audio.play('water');if(frames%6===0)splash(target.gx*2,target.gz*2);const origin=new THREE.Vector3(...(toolMesh.userData.spout??[0,.2,-.2])).applyMatrix4(toolMesh.matrixWorld),end=new THREE.Vector3(target.gx*2,.12,target.gz*2);for(let i=0;i<28;i++){const t=((i/28)+elapsed*1.8)%1;const p=origin.clone().lerp(end,t);p.y+=Math.sin(t*Math.PI)*.35;waterPositions[i*3]=p.x;waterPositions[i*3+1]=p.y;waterPositions[i*3+2]=p.z;}waterGeometry.attributes.position.needsUpdate=true;}else if(frames%45===0)toast(result);}
+ if(locked&&held&&tool===3&&target&&!target.outOfReach&&!target.wildId){const pouring=target.propId&&delights.pour(target.propId,dt),result=pouring?{ok:true}:target.propId?{ok:false,code:'ui.toyReady'}:water(state,target.gx,target.gz,dt);if(result.ok){dirty=true;stream.visible=true;audio.play('water');if(!pouring&&frames%6===0)splash(target.gx*2,target.gz*2);const origin=new THREE.Vector3(...(toolMesh.userData.spout??[0,.2,-.2])).applyMatrix4(toolMesh.matrixWorld),a=pouring?delights.anchor(target.propId,'pour'):null,end=a?new THREE.Vector3(a.x,a.y,a.z):new THREE.Vector3(target.gx*2,.12,target.gz*2);for(let i=0;i<28;i++){const t=((i/28)+elapsed*1.8)%1;const p=origin.clone().lerp(end,t);p.y+=Math.sin(t*Math.PI)*.35;waterPositions[i*3]=p.x;waterPositions[i*3+1]=p.y;waterPositions[i*3+2]=p.z;}waterGeometry.attributes.position.needsUpdate=true;}else if(frames%45===0)toast(result);}
  const plant=target&&state.plots[cellKey(target.gx,target.gz)],wild=target?.wildId&&WILD_RESOURCES.find(r=>r.id===target.wildId);
  const harvestable=wild||plant?.seed&&plant.growth>=1;
  const chopKey=locked&&held&&tool===4&&target&&!target.outOfReach&&harvestable?(wild?'wild:'+wild.id:'plot:'+cellKey(target.gx,target.gz)):null;
@@ -511,4 +557,4 @@ function frame(now){
 }
 requestAnimationFrame(frame);
 // Read-only observation surface for browser verification and independent criticism.
-Object.defineProperty(window,'kauris',{value:Object.freeze({snapshot:()=>JSON.parse(JSON.stringify({state,player:{x:pos.x,z:pos.z,feet,yaw,pitch},swimming:swimmingAt(pos.x,pos.z,feet),locked,fallbackLook,tool:tools[tool].key,seed:seedKeys[seedIndex],piece:pieceKeys[pieceIndex],material:MATERIALS[materialIndex],level,rotation,target:target?{gx:target.gx,gz:target.gz,baseY:target.baseY,point:target.point,placement:tool===5?selectedBuild():null,buildId:target.buildId,wildId:target.wildId,outOfReach:target.outOfReach}:null,chop:{key:chop.key,progress:chopProgress,impacts:totalImpacts},wild:liveWild(state),places:PLACES,homes:findHomes(state.buildings),residents:(state.residents??[]).map(r=>({...r,walking:residents.motion.get(r.id)?.walking??0})),garden:{animals:garden.snapshot(),discoveries:activeDiscoveries(state),audio:audio.snapshot()},language:i18n.language,reading:currentReading,marine:marineLife.snapshot(),marineTime:marineLife.time,performance:{averageFrameMs:timing.reduce((a,b)=>a+b,0)/Math.max(1,timing.length),calls:renderer.info.render.calls,triangles:renderer.info.render.triangles}}))}),writable:false});
+Object.defineProperty(window,'kauris',{value:Object.freeze({snapshot:()=>JSON.parse(JSON.stringify({state,player:{x:pos.x,z:pos.z,feet,yaw,pitch,supportId:state.delights.find(p=>p.kind==='lift'&&liftRiders(p,[{id:'player',x:pos.x,z:pos.z,feet}]).length)?.id??null,supportTop:floorAt(pos.x,pos.z)},swimming:swimmingAt(pos.x,pos.z,feet),locked,fallbackLook,tool:tools[tool].key,seed:seedKeys[seedIndex],piece:pieceKeys[pieceIndex],material:MATERIALS[materialIndex],level,rotation,target:target?{gx:target.gx,gz:target.gz,baseY:target.baseY,point:target.point,placement:tool===5?selectedBuild():null,validation:tool===5?placementResult(selectedBuild()).code:null,propId:target.propId,primaryAction:target.propId&&tool<5?state.delights.find(p=>p.id===target.propId)?.kind==='gutter'?'pour':'use':null,buildId:target.buildId,wildId:target.wildId,plot:target.plot,outOfReach:target.outOfReach}:null,chop:{key:chop.key,progress:chopProgress,impacts:totalImpacts},wild:liveWild(state),places:PLACES,homes:findHomes(state.buildings),residents:(state.residents??[]).map(r=>({...r,walking:residents.motion.get(r.id)?.walking??0,feet:residents.models.get(r.id)?.position.y,encounter:residents.motion.get(r.id)?.trip?.propId??null,sitting:residents.motion.get(r.id)?.sit??0,bundleVisible:residents.motion.get(r.id)?.bundle.visible??false})),garden:{animals:garden.snapshot(),discoveries:activeDiscoveries(state),audio:audio.snapshot()},language:i18n.language,reading:currentReading,marine:marineLife.snapshot(),marineTime:marineLife.time,activeTime:livingTime,whale:whale.snapshot(),delights:delights.snapshot(),performance:{averageFrameMs:timing.reduce((a,b)=>a+b,0)/Math.max(1,timing.length),calls:renderer.info.render.calls,triangles:renderer.info.render.triangles}}))}),writable:false});

@@ -15,7 +15,7 @@ export function createI18n({storage,languages=[]}={}){
  };
  return {get language(){return language;},t,
   set(next){if(!Object.hasOwn(LANGUAGES,next))return false;language=next;try{if(!storage)return false;storage.setItem(LANGUAGE_KEY,next);return true;}catch{return false;}},
-  message(result){const params={...result.params};if(params.material)params.material=t('material.'+params.material);if(params.piece)params.piece=t('piece.'+params.piece);return t(result.code,params);},
+  message(result){const params={...result.params};if(params.material)params.material=t('material.'+params.material);if(params.piece)params.piece=t('piece.'+params.piece);if(params.noun?.startsWith('prop.'))params.noun=t(params.noun);return t(result.code,params);},
   upper:key=>t(key).toLocaleUpperCase(language)
  };
 }

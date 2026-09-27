@@ -448,7 +448,7 @@ export function setResidentOutfit(group, outfit = 0) {
   for(const [mesh,role] of rig.clothes)mesh.material=palette[role];
   group.userData.outfit=index;
 }
-export function animateResident(group,{time=0,walk=0,wave=0,sit=0,look=0,celebrate=0,moveSpeed=.6,diver=false}={}) {
+export function animateResident(group,{time=0,walk=0,wave=0,sit=0,look=0,celebrate=0,moveSpeed=.6,diver=false,carry=0,rest=0}={}) {
   const r=residentRigs.get(group);if(!r)return;
   const t=Number.isFinite(time)?time:0,dt=r.lastTime===null?1:Math.max(0,Math.min(.1,t-r.lastTime));r.lastTime=t;
   const blend=1-Math.exp(-dt*10);
@@ -457,7 +457,7 @@ export function animateResident(group,{time=0,walk=0,wave=0,sit=0,look=0,celebra
   r.gaitPhase+=dt*Math.PI*Math.max(0,Math.min(1.2,moveSpeed))/.22*w;
   const phase=r.gaitPhase,stride=Math.sin(phase);
   r.body.position.y=-.384*s+Math.abs(Math.sin(phase))*.008*w;
-  r.body.rotation.z=0;r.body.rotation.x=0;
+  r.body.rotation.z=0;r.body.rotation.x=-.16*rest;
   r.head.rotation.set(Math.sin(t*1.15)*.021+.32*l,Math.sin(t*.68)*(.05+.16*l),-.028*g+Math.sin(t)*.012);
   const blink=t%4.8;r.eyes.scale.y=blink>4.58?Math.max(.08,Math.abs(blink-4.69)/.11):1;
   const poseLeg=(rig,offset)=>{
@@ -479,6 +479,7 @@ export function animateResident(group,{time=0,walk=0,wave=0,sit=0,look=0,celebra
     a.hand.rotation.set(Math.sin(t*7)*.13*greet,Math.sin(t*6)*.22*greet,side*Math.sin(t*5)*.11*greet);
   };
   armPose(r.leftArm,-1);armPose(r.rightArm,1);
+  if(carry)for(const a of [r.leftArm,r.rightArm]){a.upper.rotation.x=-.8;a.elbow.rotation.x=-.95;a.upper.rotation.z*=.3;}
   if(diver){
     r.body.position.y+=.035+Math.sin(t*1.7)*.018;
     r.leftArm.upper.rotation.x-=.24;r.rightArm.upper.rotation.x-=.24;

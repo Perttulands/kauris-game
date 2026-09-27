@@ -10,6 +10,7 @@ export const MARINE_PROFILES = Object.freeze({
   octopus: Object.freeze({ radius: .8, minY: 0, maxY: .85, stride: .28 }),
   starfish: Object.freeze({ radius: .34, minY: 0, maxY: .14, stride: .1 }),
   anemone: Object.freeze({ radius: .36, minY: 0, maxY: .5, stride: 0 }),
+  whale: Object.freeze({ radius: 4.1, minY: -1.35, maxY: 1.35, stride: 3.2 }),
 });
 
 const TAU = Math.PI * 2;
@@ -340,11 +341,69 @@ function anemone(variant) {
   return a.finish();
 }
 
-const factories={fish,crab,turtle,octopus,starfish,anemone};
+// Original compact humpback-like whale: broad low rostrum, arched chest,
+// tapered peduncle and horizontal flukes. All ornament shares one painted skin.
+function whale(){
+ const a=new Animal('whale',0),s=a.surface;
+ // Orient both closed blade faces against their local centre. The older helper
+ // remains untouched for accepted animals with different authored outlines.
+ const blade=(outline,center,thickness,color,bone)=>{const first=s.i.length;s.blade(outline,center,thickness,color,bone);for(let i=first;i<s.i.length;i+=3){const ia=s.i[i]*3,ib=s.i[i+1]*3,ic=s.i[i+2]*3,pa=vec(s.p[ia],s.p[ia+1],s.p[ia+2]),pb=vec(s.p[ib],s.p[ib+1],s.p[ib+2]),pc=vec(s.p[ic],s.p[ic+1],s.p[ic+2]),out=pa.clone().add(pb).add(pc).multiplyScalar(1/3).sub(vec(...center));if(pb.sub(pa).cross(pc.sub(pa)).dot(out)<0)[s.i[i+1],s.i[i+2]]=[s.i[i+2],s.i[i+1]];}};
+ const tail=a.bone('tail-root',[0,0,-1.10]),peduncle=a.bone('peduncle',[0,0,-2.02],tail),fluke=a.bone('flukes',[0,0,-2.68],peduncle);
+ const left=a.bone('whale-flipper-left',[-.64,-.24,.78]),right=a.bone('whale-flipper-right',[.64,-.24,.78]);
+ const section=[[-2.70,.11,.105,-.01],[-2.3,.16,.16,0],[-1.65,.25,.26,.025],[-.8,.46,.43,.035],[0,.68,.60,.02],[.85,.81,.65,0],[1.5,.73,.53,-.035],[2.12,.57,.36,-.08],[2.65,.37,.23,-.11],[2.98,.16,.105,-.12],[3.08,.005,.005,-.12]];
+ // Monotone cubic tangents preserve the authored stations/extrema while
+ // keeping a continuous slope across them. Per-interval smoothstep produced
+ // a visible stack of rounded lobes in the close source sheet.
+ const tangents=section.map((p,i)=>[1,2,3].map(axis=>{
+  if(!i)return(section[1][axis]-p[axis])/(section[1][0]-p[0]);
+  if(i===section.length-1)return(p[axis]-section[i-1][axis])/(p[0]-section[i-1][0]);
+  const previous=section[i-1],next=section[i+1],h0=p[0]-previous[0],h1=next[0]-p[0],d0=(p[axis]-previous[axis])/h0,d1=(next[axis]-p[axis])/h1;
+  if(d0*d1<=0)return 0;
+  const w0=2*h1+h0,w1=h1+2*h0;return(w0+w1)/(w0/d0+w1/d1);
+ }));
+ const sample=z=>{let k=0;while(k<section.length-2&&section[k+1][0]<z)k++;const p=section[k],q=section[k+1],h=q[0]-p[0],t=clamp((z-p[0])/h,0,1),t2=t*t,t3=t2*t;return[1,2,3].map((axis,j)=>(2*t3-3*t2+1)*p[axis]+(t3-2*t2+t)*h*tangents[k][j]+(-2*t3+3*t2)*q[axis]+(t3-t2)*h*tangents[k+1][j]);};
+ const skin=z=>z>=-.8?0:z>=-1.55?[0,tail,smooth((-.8-z)/.75)]:z>=-2.3?[tail,peduncle,smooth((-1.55-z)/.75)]:[peduncle,fluke,smooth((-2.3-z)/.4)];
+ s.patch(36,64,(u,v)=>{const z=3.08-v*5.78,[w,h,cy]=sample(z),theta=u*TAU;return[Math.cos(theta)*w,cy+Math.sin(theta)*h,z];},(u,v,p)=>{
+  const lower=Math.sin(u*TAU),pale=lower<-.46&&p[2]>-.9;
+  if(pale)return p[2]>1.4?'#dbdcca':'#b8c8bf';
+  return lower>.15?'#456577':lower<-.35?'#91adaf':'#688b99';
+ },(u,v,p)=>skin(p[2]),true);
+ // Pleats follow the lower throat rather than a floating chest plate.
+ for(let j=-5;j<=5;j++){
+  const pts=[];for(let k=0;k<=16;k++){const z=2.80-k*.175,[w,h,cy]=sample(z),x=j*.13*w;pts.push([x,cy-h*Math.sqrt(1-(x/w)**2)-.006,z]);}
+  s.tube(pts,pts.map((_,k)=>k===0||k===16?.002:.007),'#829f9f',0,5);
+ }
+ // Thin continuous jaw seam sweeps around the broad beak on each cheek.
+ for(const side of SIDES){
+  const pts=[];for(let k=0;k<=18;k++){const z=1.22+k*.097,[w,h,cy]=sample(z);pts.push([side*w*.965,cy-h*.25-.009,z]);}
+  s.tube(pts,pts.map(()=>.012),'#334e5b',0,6);
+  const bone=side<0?left:right;
+  s.patch(16,20,(u,v)=>{const theta=u*TAU,cx=side*(.65+1.48*v),cz=.80-1.43*v,span=Math.sin(Math.PI*Math.pow(v,.74))*.24+.012*(1-v),thick=.056*Math.sin(Math.PI*v)+.005;return[cx+Math.cos(theta)*span*.695, -.25-.07*v+Math.sin(theta)*thick,cz+side*Math.cos(theta)*span*.72];},(u,v)=>Math.sin(u*TAU)<0?'#dce0c7':v>.72?'#b5c6bc':'#6e929d',bone,true);
+  // Small dark eyes sit near the jaw corner, with a warm iris and catch light.
+  const center=[side*.638,-.085,1.79];
+  const orb=(c,r,color)=>s.patch(12,8,(u,v)=>{const q=u*TAU,p=v*Math.PI;return[c[0]+Math.sin(p)*Math.cos(q)*r[0],c[1]+Math.cos(p)*r[1],c[2]+Math.sin(p)*Math.sin(q)*r[2]];},color,0,false);
+  orb(center,[.041,.055,.071],'#ded5ac');orb([side*.673,-.085,1.804],[.018,.038,.047],'#243e48');orb([side*.689,-.066,1.825],[.006,.010,.010],'#f2ead4');
+ }
+ // Two continuous swept fluke lobes, with a central notch and scalloped rim.
+ for(const side of SIDES){
+  const outline=[[0,-.01,-2.66],[side*.35,.01,-2.55],[side*.77,.025,-2.62],[side*1.22,.035,-2.89],[side*1.35,.02,-3.16],[side*1.03,0,-3.08],[side*.70,-.012,-3.24],[side*.36,-.01,-3.32],[side*.12,-.005,-3.12],[0,0,-3.02]];
+  blade(outline,[side*.56,.015,-2.91],.045,'#557989',fluke);
+  blade(outline.map(p=>[p[0]*.90,p[1]-.055,p[2]+.025]),[side*.50,-.055,-2.92],.006,'#bdcec5',fluke);
+ }
+ // Low swept dorsal crest grows from the rear back, not an isolated triangle.
+ const dorsal=[[0,.43,-.55],[0,.47,-.94],[0,.71,-1.16],[0,.69,-1.30],[0,.40,-1.39],[0,.32,-1.67]];
+ blade(dorsal,[0,.45,-1.15],.075,'#456577',tail);
+ const blow=new THREE.Object3D();blow.name='anchor:blowhole';blow.position.set(0,.603,1.03);a.bones[0].add(blow);
+ // Two nostril creases are part of the existing surface batch.
+ for(const side of SIDES)s.tube([[side*.029,.613,.98],[side*.041,.611,1.05],[side*.025,.601,1.11]],[.012,.014,.005],'#304d5a',0,6);
+ return a.finish();
+}
+
+const factories={fish,crab,turtle,octopus,starfish,anemone,whale};
 
 export function createMarineAnimal(kind='fish',variant=0) {
   if(!factories[kind]) kind='fish';
-  variant=Math.abs(Math.trunc(Number.isFinite(variant)?variant:0))%(kind==='starfish'?3:kind==='turtle'||kind==='octopus'?1:2);
+  variant=Math.abs(Math.trunc(Number.isFinite(variant)?variant:0))%(kind==='starfish'?3:kind==='turtle'||kind==='octopus'||kind==='whale'?1:2);
   const key=`${kind}:${variant}`;
   if(!templates.has(key))templates.set(key,factories[kind](variant));
   // SkeletonUtils remaps every bone to this clone, including thumbnail actors.
@@ -372,6 +431,7 @@ export function createMarineAnimal(kind='fish',variant=0) {
   }
   if(kind==='starfish')rig.tips=Array.from({length:5},(_,j)=>bones.get(`tip-${j}`));
   if(kind==='anemone')rig.tentacles=Array.from({length:20},(_,j)=>bones.get(`tentacle-${j}`));
+  if(kind==='whale'){rig.tail=bones.get('tail-root');rig.peduncle=bones.get('peduncle');rig.fluke=bones.get('flukes');rig.flippers=SIDES.map(side=>({side,bone:bones.get(side<0?'whale-flipper-left':'whale-flipper-right')}));}
   rigs.set(group,rig);
   return group;
 }
@@ -386,7 +446,14 @@ export function animateMarineAnimal(group,{time=0,dt=0,speed=0,turn=0,activity='
   if(!r.initialized){r.walk=moving;r.forage=forage;r.alert=alert;r.initialized=true;}
   else if(dt>0){r.walk+=(moving-r.walk)*ease;r.forage+=(forage-r.forage)*ease;r.alert+=(alert-r.alert)*ease;}
   turn=clamp(turn,-1,1);
-  if(r.kind==='fish') {
+  if(r.kind==='whale') {
+    const strength=.5+.5*r.walk;
+    r.tail.rotation.x=Math.sin(angle)*.075*strength;
+    r.peduncle.rotation.x=Math.sin(angle-.55)*.11*strength;
+    r.fluke.rotation.x=Math.sin(angle-1.05)*.14*strength;
+    r.body.rotation.x=Math.sin(angle+.4)*.018; r.body.rotation.z=-turn*.045;
+    for(const f of r.flippers){f.bone.rotation.z=f.side*(.035+Math.sin(angle+.8)*.065)+turn*.055;f.bone.rotation.y=turn*.08;}
+  } else if(r.kind==='fish') {
     const sweep=Math.sin(angle),intensity=.12+.20*r.walk;
     r.tail.rotation.y=sweep*intensity-turn*.18;
     r.left.rotation.z=.12+Math.sin(time*4.8)*(.18-.08*r.walk);

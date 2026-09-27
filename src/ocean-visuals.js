@@ -75,7 +75,7 @@ function scallop(b,x,y,z,r,angle){
 export function createOceanWorld({terrain,heightAt}){
  if(!terrain||typeof heightAt!=='function')throw new TypeError('Ocean visuals require authoritative terrain and heightAt');
  const root=new THREE.Group();root.name='shell-garden-ocean';
- const reefSolids=[];
+ const reefSolids=[],backdropBounds=[];
  // Continuous terrain extends into visual-only distance; reachable heights stay exact.
  const positions=[],colors=[],c0=new THREE.Color('#b4b398'),c1=new THREE.Color('#efdcba');
  const xs=[],zs=[];
@@ -185,15 +185,16 @@ export function createOceanWorld({terrain,heightAt}){
  }
  // Layered scenic reef ridges beyond the physical boundary hide the straight cutoff.
  // They are unreachable background forms, not new terrain or collider authority.
+ const addBackdrop=(shape,mat,...args)=>{const g=b.add(shape,mat,...args),a=g.attributes.position.array;let minZ=Infinity,maxZ=-Infinity;for(let i=2;i<a.length;i+=3){minZ=Math.min(minZ,a[i]);maxZ=Math.max(maxZ,a[i]);}backdropBounds.push({minZ,maxZ});};
  for(let row=0;row<3;row++)for(let i=-4;i<=4;i++){
-  const x=rx+i*(6.3+row),z=terrain.maxZ+5+row*8+Math.sin(i*1.7)*1.4,y=heightAt(x,z),h=1.55+row*.62+(.5+.5*Math.cos(i*2.3+row))*1.15;
-  b.add('rock',row%2?'stoneLight':'stone',x,y+h*.38,z,4.3+row*.6,h*.56,2.8+row*.9,.09,i*.23,.08);
-  b.add('rough','stone',x+1,y+h*.66,z+.35,2.8,h*.41,2.1,0,i*.47);
+  const x=rx+i*(6.3+row),z=terrain.maxZ+12+row*8+Math.sin(i*1.7)*1.4,y=heightAt(x,z),h=1.55+row*.62+(.5+.5*Math.cos(i*2.3+row))*1.15;
+  addBackdrop('rock',row%2?'stoneLight':'stone',x,y+h*.38,z,4.3+row*.6,h*.56,2.8+row*.9,.09,i*.23,.08);
+  addBackdrop('rough','stone',x+1,y+h*.66,z+.35,2.8,h*.41,2.1,0,i*.47);
   if(row===0){for(let j=0;j<3;j++)kelp(b,x-1+j*.74,y+.35,z-.7,2.5+j*.4,i+j*.71);coral(b,x+.63,y+h*.79,z,1.5,i+5);}
  }
  // Sandy shell stepping motifs lead through the arch; never raised enough to hide a floor.
  for(let i=0;i<5;i++)scallop(b,rx+Math.sin(i*1.9)*.9,base-.07,rz-2+i*.58,.35+i*.027,.25);
- root.add(b.finish('reef-beds-and-shell-crown'));root.userData.reefSolids=reefSolids;return root;
+ root.add(b.finish('reef-beds-and-shell-crown'));root.userData.reefSolids=reefSolids;root.userData.backdropBounds=backdropBounds;return root;
 }
 // Low, soft planting within pads yields to funded construction and doorway approaches.
 export function createReefCover({terrain,heightAt,excludedCells=[]}){

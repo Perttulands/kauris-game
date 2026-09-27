@@ -1,7 +1,9 @@
 import {activeDiscoveries,seedUnlocked,plantVariation,readGarden} from './garden.js';
 import {reconcileResidents,readResidents} from './residents.js';
 import {edgeKey,wallLike,baseOf,canonicalPiece,adjacentCells} from './building.js';
-import {buildBase,inWorld,terrainHeight} from './terrain.js';
+import {TERRAIN,buildBase,inWorld,terrainHeight} from './terrain.js';
+import {readDelights,propBoxes,boxesOverlap} from './delights.js';
+import {buildingBoxes} from './building.js';
 export {edgeKey} from './building.js';
 import {WILD_RESOURCES,WORLD_OBSTACLES,wildFootprint,cellFootprint,overlaps} from './world-data.js';
 export const SAVE_KEY = 'kauris-meadow-v1';
@@ -18,13 +20,13 @@ export const SEEDS = {
   flowers: {name:'Wildflowers', resource:'fiber', yield:8, seconds:15, color:'#e9a3c1'},
 };
 export const PIECES = {floor:{name:'Floor',cost:2},wall:{name:'Wall',cost:3},window:{name:'Window',cost:3},door:{name:'Doorway',cost:4},roof:{name:'Roof',cost:3}};
-export const MATERIALS = ['wood','copper','iron','diamond'];
+export const MATERIALS = ['wood','copper','iron','diamond','fiber'];
 export const cellKey=(gx,gz)=>`${gx},${gz}`;
 export const validCell=(gx,gz)=>Number.isInteger(gx)&&Number.isInteger(gz)&&Math.abs(gx)<=13&&Math.abs(gz)<=13;
 const ok=(code,params={},extra={})=>({ok:true,code,params,...extra});
 const no=(code,params={})=>({ok:false,code,params});
 export function freshState(){
-  const s={version:1,wildRemoved:[],worldHidden:[],residents:[],plots:{},buildings:[],inventory:{wood:36,copper:0,iron:0,diamond:0,fiber:0},nextId:1,player:{x:0,y:0,z:9,yaw:0,pitch:-0.18},stats:{planted:0,harvested:0,built:0}};
+  const s={version:1,wildRemoved:[],worldHidden:[],residents:[],delights:[],nextDelightId:1,plots:{},buildings:[],inventory:{wood:36,copper:0,iron:0,diamond:0,fiber:0},nextId:1,player:{x:0,y:0,z:9,yaw:0,pitch:-0.18},stats:{planted:0,harvested:0,built:0}};
   // Harvestable starter orchard; the clearing remains open for the player's creation.
   const orchard=[[-7,-6],[-9,-8],[-5,-10],[-10,-3],[6,-8],[8,-5],[3,-11],[5,-3]];
   ['oak','birch','pine','willow','copper','iron','diamond','flowers'].forEach((seed,i)=>{const [gx,gz]=orchard[i];s.plots[cellKey(gx,gz)]={gx,gz,phase:'filled',seed,growth:1,water:1,variation:plantVariation(gx,gz,seed)};});
@@ -37,7 +39,7 @@ export function worldBlocked(s,gx,gz){
  return activeDiscoveries(s).some(d=>overlaps(cell,d.bounds))||liveWild(s).some(r=>overlaps(cell,wildFootprint(r)))||activeObstacles(s).some(o=>overlaps(cell,o));
 }
 export function mergeWorld(s){
- const occupied=[...Object.values(s.plots),...s.buildings.flatMap(b=>adjacentCells(b))].map(p=>cellFootprint(p.gx,p.gz,.35));
+ const occupied=[...Object.values(s.plots),...s.buildings.flatMap(b=>adjacentCells(b)),...(s.delights??[])].map(p=>cellFootprint(p.gx,p.gz,.35));
  const p=s.player;occupied.push({minX:p.x-1,maxX:p.x+1,minZ:p.z-1,maxZ:p.z+1});
  for(const r of WILD_RESOURCES)if(occupied.some(c=>overlaps(c,wildFootprint(r)))&&!s.wildRemoved.includes(r.id))s.wildRemoved.push(r.id);
  for(const o of WORLD_OBSTACLES)if(occupied.some(c=>overlaps(c,o))&&!s.worldHidden.includes(o.id))s.worldHidden.push(o.id);
@@ -50,6 +52,7 @@ export function harvestWild(s,id){
 }
 export function dig(s,gx,gz){
  if(!validCell(gx,gz))return no('message.insideMeadow');
+ if(s.delights?.some(p=>p.gx===gx&&p.gz===gz&&p.hostId===null&&p.baseY===0))return no('message.removeToy');
  if(worldBlocked(s,gx,gz))return no('message.clearWild');
  if(s.buildings.some(b=>!wallLike(b)&&b.gx===gx&&b.gz===gz&&baseOf(b)===0))return no('message.removeBuilding');
  const k=cellKey(gx,gz),p=s.plots[k];
@@ -100,6 +103,7 @@ export function validateBuild(s,b,{legacy=false}={}){
  if(!Number.isFinite(baseOf(b))||!adjacentCells(b).some(c=>buildBase(c.gx,c.gz)===baseOf(b))||!Object.hasOwn(PIECES,b.kind)||!MATERIALS.includes(b.material)||!Number.isInteger(b.level)||b.level<0||b.level>3||!Number.isInteger(b.rotation)||b.rotation<0||b.rotation>3)return no('message.invalidPiece');
  if(!legacy&&baseOf(b)===0&&!adjacentCells(b).some(c=>validCell(c.gx,c.gz)&&!worldBlocked(s,c.gx,c.gz)))return no('message.clearWild');
  if(s.buildings.length>=400)return no('message.pieceLimit');
+ if(s.delights?.some(p=>propBoxes(p,{envelope:true}).some(a=>buildingBoxes(b).some(c=>boxesOverlap(a,c,.001)))))return no('message.removeToy');
  if(!wallLike(b)&&s.plots[cellKey(b.gx,b.gz)])return no('message.clearGround');
  if(s.buildings.some(x=>wallLike(x)&&wallLike(b)?edgeKey(x)===edgeKey(b):x.gx===b.gx&&x.gz===b.gz&&baseOf(x)===baseOf(b)&&x.level===b.level&&(x.kind===b.kind||(['floor','roof'].includes(x.kind)&&['floor','roof'].includes(b.kind)))))return no('message.occupied');
  if(!supported(s,b))return no(b.kind==='roof'?'message.roofSupport':b.kind==='floor'?'message.floorSupport':'message.floorFirst');
@@ -114,6 +118,7 @@ export function build(s,b){
 }
 export function remove(s,id){
  const b=s.buildings.find(x=>x.id===id);if(!b)return no('message.aimPiece');
+ if(s.delights?.some(p=>p.hostId===id))return no('message.removeToy');
  const rest={...s,buildings:s.buildings.filter(x=>x.id!==id)};
  if(rest.buildings.some(x=>!supported(rest,x)))return no('message.removeAbove');
  s.buildings=rest.buildings;s.inventory[b.material]+=b.cost;reconcileResidents(s);return ok('message.refunded',{count:b.cost,material:b.material});
@@ -141,9 +146,11 @@ export function deserialize(raw){
   ids.add(b.id);s.buildings.push({id:b.id,gx:b.gx,gz:b.gz,kind:b.kind,material:b.material,level:b.level,rotation:b.rotation,baseY:baseOf(b),cost:b.cost});
  }
  s.nextId=Math.max(0,...ids)+1;
+ s.delights=readDelights(d.delights,s);
+ const nextToy=Math.max(0,...s.delights.map(p=>p.id))+1;if(d.nextDelightId!==undefined&&(!Number.isSafeInteger(d.nextDelightId)||d.nextDelightId<nextToy))throw Error('Invalid toy sequence');s.nextDelightId=d.nextDelightId??nextToy;
  const p=d.player;
  if(p&&['x','z','yaw','pitch'].every(k=>Number.isFinite(p[k]))&&inWorld(p.x,p.z)){
-  if(p.y!==undefined&&(!Number.isFinite(p.y)||p.y< -8||p.y>20))throw Error('Invalid player height');
+  if(p.y!==undefined&&(!Number.isFinite(p.y)||p.y<TERRAIN.deepFloor-1||p.y>20))throw Error('Invalid player height');
   s.player={x:p.x,y:Math.max(terrainHeight(p.x,p.z),p.y??0),z:p.z,yaw:p.yaw,pitch:Math.max(-1.45,Math.min(1.45,p.pitch))};
  }
  for(const [field,known] of [['wildRemoved',WILD_RESOURCES],['worldHidden',WORLD_OBSTACLES]]){
@@ -151,6 +158,6 @@ export function deserialize(raw){
   s[field]=[...new Set((d[field]??[]).filter(id=>known.some(x=>x.id===id)))];
  }
  for(const k of Object.keys(s.stats))s.stats[k]=Number.isSafeInteger(d.stats?.[k])&&d.stats[k]>=0?d.stats[k]:0;
- s.residents=readResidents(d.residents);reconcileResidents(s);
+ s.residents=readResidents(d.residents);for(const r of s.residents)if(r.rideId!==null){const p=s.delights.find(p=>p.id===r.rideId&&p.kind==='lift');if(!p||p.baseY!==r.baseY||r.x===null||Math.abs(r.x-p.gx*2)>.825||Math.abs(r.z-p.gz*2)>.825)throw Error('Invalid resident lift support');}reconcileResidents(s);
  return readGarden(d,d.wildRemoved===undefined||d.worldHidden===undefined?mergeWorld(s):s);
 }

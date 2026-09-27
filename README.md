@@ -2,7 +2,7 @@
 
 A game I am developing with my son: a peaceful little world for growing trees, exploring a turquoise reef and making homes for friendly neighbours.
 
-Kauris is a first-person, Minecraft-inspired browser game with an authored, blocky orchard and underwater garden. Grow ordinary, metal and diamond trees, gather materials, and build with timber, copper, iron or crystal. Flowers attract butterflies and bees; birds and deer visit the garden. Swim freely, watch shore crabs scuttle and forage, follow a sea turtle, and find an octopus by the reef arch. Loose fish schools, sea stars and anemones inhabit the cove. Discover unusual seeds and welcome a diver into an underwater home. There is no combat, drowning or oxygen timer.
+Kauris is a first-person, Minecraft-inspired browser game with an authored, blocky orchard and underwater garden. Grow ordinary, metal and diamond trees, gather materials, and build with timber, copper, iron, crystal or woven fiber. Flowers attract butterflies and bees; birds and deer visit the garden. Swim freely, watch shore crabs scuttle and forage, follow a sea turtle, and find an octopus by the reef arch. Loose fish schools, sea stars and anemones inhabit the cove. Discover unusual seeds and welcome a diver into an underwater home. There is no combat, drowning or oxygen timer.
 
 This is a small single-player game in active development. Your world stays in this browser’s local storage; no account or server is needed to play. Keep the same browser and site address to keep using that save.
 
@@ -54,6 +54,16 @@ Dig a hole, choose a seed, fill the soil and give it a drink. Watered plants mat
 Build a floor, place walls around its edges, add a doorway and a roof one level above. Connected enclosed rooms share a neighbour. Underwater, use the broad sandy clearing in front of the shell reef; the same house rules welcome a friendly diver. Roofs, all exposed sides and an exterior doorway are required. There is no air-sealing chore. Homes are recognized at their ground or seabed level, rather than across multi-storey layouts. Remove upper pieces before their supports for exact material refunds.
 
 Neighbours remember their homes and clothing. Opening a wall or roof makes them wait calmly until repaired. They follow short safe doorway routes and never block the player. Existing saved houses and planted trees are retained when the game is updated.
+
+## A living village
+
+The picture book includes birdhouses, crab shelters, water channels, wheels, bells, lifts, crystal lamps, curtains, hammocks and windsocks. Select a picture to build it; the cost appears beside its material. Removing an object returns its original cost. Clear space around moving cloth, animals and lifts.
+
+Aim nearby and click the pictured hand to use an object. Build and remove tools keep their usual action. Hold the watering can over a channel to pour; a wheel placed beside the channel's spout turns with the flow, and a nearby bell rings. A wheel ghost shows which side connects. Place a lamp near a curtain to light its colored pattern, push a hammock, or use the lift to ride between the ground and a 2.4-metre landing. The lift stops when a body or ceiling blocks its path. Lower an occupied lift before removing it.
+
+A new neighbour carries a bundle home and unpacks a cushion and flower. Neighbours can rest in nearby hammocks, take a safe lift ride and watch through crystal windows. These are short local visits: blocked routes wait rather than moving through walls. Birdhouses welcome a visiting bird. Build a crab shelter on the flat sand just before the reef; a crab can enter, leave a shell and greet a nearby bell. Crystal windows let you read the names of fish outside while retaining their physical boundary.
+
+Beyond the reef the seabed slopes into a deeper, freely swimmable offshore area. An occasional whale approaches, surfaces and departs. The first approach timer starts when you enter offshore water; later visits have quiet intervals. There is no damage or breath limit. Material sounds, water ambience and the whale call use local synthesis, with the existing sound button controlling the whole mix.
 
 ## Development
 

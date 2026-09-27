@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import {createTree,createBuildPiece,createTool,createResident} from './visuals.js';
 import {createAnimal} from './garden-visuals.js';
 import {createMarineAnimal} from './marine-visuals.js';
+import {createDelight} from './delight-visuals.js';
+import {DELIGHT_KEYS} from './delights.js';
 import {SEEDS,PIECES,MATERIALS} from './state.js';
 // One startup pass, one existing WebGL context, one reusable target. No frame snapshots.
 export function createPictures(renderer){
@@ -11,7 +13,7 @@ export function createPictures(renderer){
  const scene=new THREE.Scene(),camera=new THREE.OrthographicCamera(-1,1,1,-1,.01,100);
  scene.add(new THREE.HemisphereLight('#f7fbf0','#6c8173',2.2));const sun=new THREE.DirectionalLight('#fff3de',2.4);sun.position.set(-4,7,5);scene.add(sun);
  const canvas=document.createElement('canvas');canvas.width=canvas.height=size;const ctx=canvas.getContext('2d'),pixels=new Uint8Array(size*size*4),img=ctx.createImageData(size,size),pictures={};
- const models=[...['butterfly','bird','deer','bee','grub'].map(k=>['animal:'+k,()=>createAnimal(k)]),...['crab','turtle','octopus','starfish','anemone'].map(k=>['animal:'+k,()=>createMarineAnimal(k)]),...[0,1].map(v=>['animal:fish:'+v,()=>createMarineAnimal('fish',v)]),...Array.from({length:4},(_,v)=>Array.from({length:4},(_,o)=>[`diver:${v}:${o}`,()=>createResident(v,o,true)])).flat(),...Array.from({length:4},(_,v)=>Array.from({length:4},(_,o)=>[`resident:${v}:${o}`,()=>createResident(v,o)])).flat(),...Object.keys(SEEDS).map(k=>[`seed:${k}`,()=>createTree(k)]),...Object.keys(PIECES).flatMap(k=>MATERIALS.map(m=>[`piece:${k}:${m}`,()=>createBuildPiece(k,m)])),...['shovel','seed','fill','hose','axe','build','remove'].map(k=>[`tool:${k}`,()=>createTool(k)])];
+ const models=[...DELIGHT_KEYS.map(k=>['prop:'+k,()=>createDelight(k)]),...['butterfly','bird','deer','bee','grub'].map(k=>['animal:'+k,()=>createAnimal(k)]),...['crab','turtle','octopus','starfish','anemone','whale'].map(k=>['animal:'+k,()=>createMarineAnimal(k)]),...[0,1].map(v=>['animal:fish:'+v,()=>createMarineAnimal('fish',v)]),...Array.from({length:4},(_,v)=>Array.from({length:4},(_,o)=>[`diver:${v}:${o}`,()=>createResident(v,o,true)])).flat(),...Array.from({length:4},(_,v)=>Array.from({length:4},(_,o)=>[`resident:${v}:${o}`,()=>createResident(v,o)])).flat(),...Object.keys(SEEDS).map(k=>[`seed:${k}`,()=>createTree(k)]),...Object.keys(PIECES).flatMap(k=>MATERIALS.map(m=>[`piece:${k}:${m}`,()=>createBuildPiece(k,m)])),...['shovel','seed','fill','hose','axe','build','remove'].map(k=>[`tool:${k}`,()=>createTool(k)])];
  try{
   renderer.shadowMap.enabled=false;renderer.setRenderTarget(target);renderer.setScissorTest(false);renderer.setClearColor('#000000',0);
   for(const [key,make] of models){
