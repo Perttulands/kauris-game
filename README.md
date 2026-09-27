@@ -2,13 +2,15 @@
 
 A game I am developing with my son: a peaceful little world for growing trees, exploring a turquoise reef and making homes for friendly neighbours.
 
-Kauris is a first-person, Minecraft-inspired browser game with an authored, blocky orchard and underwater garden. Grow ordinary, metal and diamond trees, gather materials, and build with timber, copper, iron or crystal. Flowers attract butterflies and bees; birds and deer visit the garden. Swim freely, discover unusual seeds, and welcome a diver into an underwater home. There is no combat, drowning or oxygen timer.
+Kauris is a first-person, Minecraft-inspired browser game with an authored, blocky orchard and underwater garden. Grow ordinary, metal and diamond trees, gather materials, and build with timber, copper, iron or crystal. Flowers attract butterflies and bees; birds and deer visit the garden. Swim freely, watch shore crabs scuttle and forage, follow a sea turtle, and find an octopus by the reef arch. Loose fish schools, sea stars and anemones inhabit the cove. Discover unusual seeds and welcome a diver into an underwater home. There is no combat, drowning or oxygen timer.
 
 This is a small single-player game in active development. Your world stays in this browser’s local storage; no account or server is needed to play. Keep the same browser and site address to keep using that save.
 
 Choose **Suomi, Svenska or English** on the welcome screen or in the picture book. Menus, guidance and object names change immediately; the language preference is remembered separately from your world. The initial language follows a supported browser language, with English as the fallback.
 
-Larger text and picture cards make words easier to notice. Look at a nearby tree, flower, animal, neighbour or building, or point to a picture in the book, to see its name in clear uppercase letters. Keyboard focus works too, including on special seeds you have not found yet. Pictures and words offer a gentle association while playing, without quizzes, narration or claims of tested learning outcomes.
+The evergreen tree is named **Spruce / Kuusi / Gran**; existing worlds keep their trees and materials.
+
+Larger text and picture cards make words easier to notice. Look at a nearby tree, flower, animal, neighbour or building, or point to a picture in the book, to see its name in clear uppercase letters. Keyboard focus works too, including on special seeds you have not found yet. Moving sea creatures also have matching pictured names, with a small aiming allowance that respects walls and rocks. Pictures and words offer a gentle association while playing, without quizzes, narration or claims of tested learning outcomes.
 
 ## Run
 

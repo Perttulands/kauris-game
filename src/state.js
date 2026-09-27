@@ -8,7 +8,7 @@ export const SAVE_KEY = 'kauris-meadow-v1';
 export const SEEDS = {
   oak: {name:'Oak', resource:'wood', yield:18, seconds:20, color:'#b6ce72'},
   birch: {name:'Birch', resource:'wood', yield:16, seconds:18, color:'#e6e9bf'},
-  pine: {name:'Pine', resource:'wood', yield:20, seconds:24, color:'#55998a'},
+  pine: {name:'Spruce', resource:'wood', yield:20, seconds:24, color:'#55998a'},
   willow: {name:'Willow', resource:'wood', yield:22, seconds:26, color:'#91be70'},
   copper: {name:'Copper', resource:'copper', yield:14, seconds:22, color:'#e89961'},
   iron: {name:'Iron', resource:'iron', yield:12, seconds:24, color:'#b6cad4'},

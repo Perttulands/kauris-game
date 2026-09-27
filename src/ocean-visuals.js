@@ -5,7 +5,7 @@ import {convexSolid} from './reef-collision.js';
 // Marine assets sample caller terrain; exact hard geometry supplies lead-owned collision.
 // Water and actor motion remain runtime-owned; soft planting has no collision.
 const M={};
-for(const [name,color]of Object.entries({sand:'#c7d4b3',sandLight:'#e5e1bd',stone:'#557e78',stoneLight:'#81a099',coral:'#df9982',coralTip:'#f4c8a3',violet:'#a48aaf',violetTip:'#d3bacd',ochre:'#d3b269',kelp:'#468c78',kelpLight:'#7db590',shell:'#ead7ba',shellShade:'#b7a59a',fish:'#e6b660',fishLight:'#fff0bf',fishBlue:'#62b9b6',fishDark:'#397781',eye:'#263e42'}))M[name]=new THREE.MeshStandardMaterial({color,roughness:name.startsWith('fish')?.52:.88,flatShading:true});
+for(const [name,color]of Object.entries({sand:'#d3c6a5',sandLight:'#ece0bc',stone:'#557e78',stoneLight:'#81a099',coral:'#df9982',coralTip:'#f4c8a3',violet:'#a48aaf',violetTip:'#d3bacd',ochre:'#d3b269',kelp:'#468c78',kelpLight:'#7db590',shell:'#ead7ba',shellShade:'#b7a59a',fish:'#e6b660',fishLight:'#fff0bf',fishBlue:'#62b9b6',fishDark:'#397781',eye:'#263e42'}))M[name]=new THREE.MeshStandardMaterial({color,roughness:name.startsWith('fish')?.52:.88,flatShading:true});
 M.kelp.side=THREE.DoubleSide;M.kelpLight.side=THREE.DoubleSide;
 const G={rock:new THREE.IcosahedronGeometry(1,1),rough:new THREE.IcosahedronGeometry(1,0),cyl:new THREE.CylinderGeometry(1,1,1,7),cone:new THREE.ConeGeometry(1,1,8)};
 const xform=new THREE.Object3D();
@@ -77,7 +77,7 @@ export function createOceanWorld({terrain,heightAt}){
  const root=new THREE.Group();root.name='shell-garden-ocean';
  const reefSolids=[];
  // Continuous terrain extends into visual-only distance; reachable heights stay exact.
- const positions=[],colors=[],c0=new THREE.Color('#90ac98'),c1=new THREE.Color('#e5d4a9');
+ const positions=[],colors=[],c0=new THREE.Color('#b4b398'),c1=new THREE.Color('#efdcba');
  const xs=[],zs=[];
  for(let x=terrain.minX-64;x<terrain.minX;x+=4)xs.push(x);
  for(let i=0;i<=54;i++)xs.push(terrain.minX+(terrain.maxX-terrain.minX)*i/54);
@@ -234,36 +234,4 @@ export function createReefCover({terrain,heightAt,excludedCells=[]}){
  // Batch geometries are already private; detach palettes before exposing disposal ownership.
  group.traverse(o=>{if(o.isMesh)o.material=o.material.clone();});
  group.userData.privateResources=true;group.userData.clumps=clumps;return group;
-}
-const fishTemplates=new Map(),fishRigs=new WeakMap();
-function fin(parts,mat,points){const vertices=[];for(let i=1;i<points.length-1;i++)vertices.push(...points[0],...points[i],...points[i+1],...points[0],...points[i+1],...points[i]);triangles(parts,mat,vertices);}
-export function createMarineAnimal(kind='fish',variant=0){
- const v=Math.abs(Math.trunc(variant)||0)%3,key=`${kind}:${v}`;
- if(!fishTemplates.has(key)){
-  const root=new THREE.Group();root.name=`marine-${key}`;const b=new Batch(),main=v===1?'fishBlue':'fish',stripe=v===1?'fishDark':'fishLight';
-  b.add('rock',main,0,0,.025,.085,v===2?.12:.105,.205);
-  b.add('rock','fishLight',0,-.038,.075,.072,.060,.145);
-  b.add('rock',main,0,.003,.188,.068,.066,.063);
-  b.add('rock','coralTip',0,-.010,.244,.025,.020,.015);
-  for(const side of [-1,1]){
-   b.add('rock','fishLight',side*.057,.035,.164,.017,.029,.029);
-   b.add('rock','eye',side*.068,.036,.171,.010,.018,.018);
-   b.add('rock','shell',side*.074,.045,.177,.003,.005,.005);
-   b.beam(stripe,[side*.068,.046,.103],[side*.072,-.043,.106],.005);
-   for(let j=0;j<3;j++)b.add('rough',stripe,side*(.078-j*.008),.004,-.022-j*.050,.008,.070-j*.007,.013,0,side*.12,.15);
-  }
-  fin(b,main,[[0,.068,.10],[0,.172,-.016],[0,.129,-.126],[0,.048,-.164]]);
-  fin(b,stripe,[[0,-.063,.045],[0,-.137,-.078],[0,-.050,-.128]]);
-  root.add(b.finish('fish-body',true));
-  const tail=new THREE.Group();tail.name='fish-tail';tail.position.z=-.14;const tailParts=new Batch();tailParts.add('rock',main,0,0,-.025,.038,.052,.065);
-  fin(tailParts,main,[[0,0,-.027],[0,.105,-.151],[0,.030,-.134],[0,0,-.10],[0,-.038,-.143],[0,-.104,-.154]]);
-  tailParts.beam(stripe,[0,0,-.054],[0,.085,-.139],.004);tailParts.beam(stripe,[0,0,-.054],[0,-.084,-.141],.004);tail.add(tailParts.finish('fish-tail-fin',true));root.add(tail);
-  for(const side of [-1,1]){const f=new THREE.Group();f.name=side<0?'fish-left-fin':'fish-right-fin';f.position.set(side*.057,-.024,.077);const p=new Batch();fin(p,stripe,[[0,0,0],[side*.075,-.035,-.010],[side*.068,-.044,-.069],[0,0,-.046]]);f.add(p.finish('pectoral',true));root.add(f);}
-  fishTemplates.set(key,root);
- }
- const root=fishTemplates.get(key).clone();fishRigs.set(root,{tail:root.getObjectByName('fish-tail'),left:root.getObjectByName('fish-left-fin'),right:root.getObjectByName('fish-right-fin')});return root;
-}
-export function animateMarineAnimal(group,{time=0,swim=1}={}){
- const r=fishRigs.get(group);if(!r)return;const t=Number.isFinite(time)?time:0,s=THREE.MathUtils.clamp(Number.isFinite(swim)?swim:0,0,1);
- r.tail.rotation.y=Math.sin(t*(4+3*s))*(.12+.23*s);r.left.rotation.z=.15+Math.sin(t*5)*.27;r.right.rotation.z=-.15-Math.sin(t*5)*.27;
 }

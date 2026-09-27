@@ -13,7 +13,7 @@ test('complete locale schemas retain placeholders and separate mineral species f
   for(const kind of Object.keys(SEEDS))assert.ok(dict['tree.'+kind]);
   for(const material of ['diamond','copper','iron'])assert.notEqual(dict['tree.'+material],dict['material.'+material]);
  }
- assert.equal(LOCALES.fi['tree.pine'].toLocaleUpperCase('fi'),'MÄNTY');assert.equal(LOCALES.sv['tree.diamond'].toLocaleUpperCase('sv'),'DIAMANTTRÄD');
+ assert.equal(LOCALES.fi['tree.pine'].toLocaleUpperCase('fi'),'KUUSI');assert.equal(LOCALES.sv['tree.diamond'].toLocaleUpperCase('sv'),'DIAMANTTRÄD');
 });
 test('preference is independent of saves, regional browser fallback, immediate switching and storage failure',()=>{
  assert.equal(chooseLanguage('sv',['fi-FI']),'sv');assert.equal(chooseLanguage('bad',['de','fi-FI']),'fi');assert.equal(chooseLanguage(null,['sv-SE']),'sv');assert.equal(chooseLanguage(null,['fr']),'en');

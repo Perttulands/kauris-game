@@ -15,10 +15,12 @@ import {TERRAIN,terrainHeight,inWorld,buildBase} from './terrain.js';
 import {wallLike,baseOf,canonicalPiece,adjacentCells,buildingBoxes as boxes,touches} from './building.js';
 import {swimmingAt,verticalStep} from './movement.js';
 import {reefBlocked,reefFloor,reefCeiling,reefSafeFeet} from './reef-collision.js';
-import {createOceanWorld,createReefCover,createMarineAnimal,animateMarineAnimal} from './ocean-visuals.js';
+import {createOceanWorld,createReefCover} from './ocean-visuals.js';
+import {createMarineAnimal,animateMarineAnimal,MARINE_PROFILES} from './marine-visuals.js';
+import {createMarineLife} from './marine.js';
 import {createMeadowCover,animateMeadowCover} from './meadow-visuals.js';
 import {createI18n,LANGUAGES} from './i18n.js';
-import {nearestReading,createReadingFocus} from './reading.js';
+import {nearestReading,createReadingFocus,assistedReading} from './reading.js';
 import './ui.css';
 const $=id=>document.getElementById(id), canvas=$('game');
 let localeStorage;try{localeStorage=localStorage;}catch{}
@@ -27,7 +29,13 @@ let state=freshState(),loadWarning='';
 try{const raw=localStorage.getItem(SAVE_KEY);if(raw)state=deserialize(raw);}catch{loadWarning='ui.loadWarning';}
 const renderer=new THREE.WebGLRenderer({canvas,antialias:true,powerPreference:'high-performance'});
 renderer.setPixelRatio(Math.min(devicePixelRatio,1.6));renderer.setSize(innerWidth,innerHeight);renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFShadowMap;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=.95;
-const scene=new THREE.Scene();scene.background=new THREE.Color('#b7d7d7');scene.fog=new THREE.Fog('#b7d7d7',38,118);
+const scene=new THREE.Scene(),dayBackground=new THREE.Color('#b7d7d7');scene.background=dayBackground;scene.fog=new THREE.Fog('#b7d7d7',38,118);
+// Surface light falls into cooler depth. One quiet background texture adds depth
+// without particles, animated screen effects or another terrain/physics system.
+const seaCanvas=document.createElement('canvas');seaCanvas.width=8;seaCanvas.height=256;
+const seaContext=seaCanvas.getContext('2d'),seaGradient=seaContext.createLinearGradient(0,0,0,256);
+seaGradient.addColorStop(0,'#a0d6ce');seaGradient.addColorStop(.46,'#5c9fa7');seaGradient.addColorStop(1,'#397382');seaContext.fillStyle=seaGradient;seaContext.fillRect(0,0,8,256);
+const seaBackground=new THREE.CanvasTexture(seaCanvas);seaBackground.colorSpace=THREE.SRGBColorSpace;
 const camera=new THREE.PerspectiveCamera(68,innerWidth/innerHeight,.05,180);camera.rotation.order='YXZ';scene.add(camera);
 const hemi=new THREE.HemisphereLight('#dceceb','#5f7466',1.5);scene.add(hemi);
 const sun=new THREE.DirectionalLight('#fff3df',2.0);sun.position.set(-24,38,16);sun.castShadow=true;sun.shadow.mapSize.set(2048,2048);Object.assign(sun.shadow.camera,{left:-24,right:24,top:24,bottom:-24,near:1,far:110});sun.shadow.normalBias=.025;sun.shadow.bias=-.0002;scene.add(sun,sun.target);
@@ -41,10 +49,13 @@ const seabedPos=seabedGeo.attributes.position;for(let i=0;i<seabedPos.count;i++)
 const seabed=new THREE.Mesh(seabedGeo,new THREE.MeshBasicMaterial({visible:false}));seabed.userData.seabed=true;scene.add(seabed);
 const waterSurface=new THREE.Mesh(new THREE.PlaneGeometry(500,500).rotateX(-Math.PI/2),new THREE.MeshPhysicalMaterial({color:'#58bdbe',roughness:.23,metalness:.08,transparent:true,opacity:.48,depthWrite:false,side:THREE.DoubleSide}));waterSurface.position.set(0,TERRAIN.waterY,0);scene.add(waterSurface);
 const seaLight=new THREE.HemisphereLight('#b5eee5','#27616a',.65);seaLight.position.set(0,0,52);scene.add(seaLight);
-const marine=[];for(let i=0;i<12;i++){const model=createMarineAnimal('fish',i%2);model.position.set((i%3-1)*6,-4.7,48+Math.floor(i/3)*3);scene.add(model);marine.push({model,index:i});}
+const marineLife=createMarineLife({profiles:MARINE_PROFILES,reefSolids,buildings:state.buildings});
+const marine=marineLife.animals.map(actor=>{const model=createMarineAnimal(actor.kind,actor.variant);model.rotation.order='YXZ';scene.add(model);return {actor,model};});
+function poseMarine(dt=0){for(const {actor:a,model} of marine){model.position.set(a.x,a.y,a.z);model.rotation.set(a.pitch,a.yaw,a.roll,'YXZ');animateMarineAnimal(model,{time:marineLife.time,dt,speed:a.speed,turn:a.turn,activity:a.activity,phase:a.phase});model.updateMatrixWorld(true);}}
+poseMarine();
 let cover=null,reefCover=null,coverKey='';
 function syncCover(){
- const excludedCells=[...Object.values(state.plots),...state.buildings.flatMap(adjacentCells),...activeDiscoveries(state).flatMap(d=>{const a=[];for(let gx=Math.floor(d.bounds.minX/2);gx<=Math.ceil(d.bounds.maxX/2);gx++)for(let gz=Math.floor(d.bounds.minZ/2);gz<=Math.ceil(d.bounds.maxZ/2);gz++)a.push({gx,gz});return a;})];
+ const excludedCells=[...Object.values(state.plots),...state.buildings.flatMap(adjacentCells),...marine.filter(a=>a.actor.kind==='octopus').map(a=>({gx:Math.round(a.actor.homeX/2),gz:Math.round(a.actor.homeZ/2)})),...activeDiscoveries(state).flatMap(d=>{const a=[];for(let gx=Math.floor(d.bounds.minX/2);gx<=Math.ceil(d.bounds.maxX/2);gx++)for(let gz=Math.floor(d.bounds.minZ/2);gz<=Math.ceil(d.bounds.maxZ/2);gz++)a.push({gx,gz});return a;})];
  const key=excludedCells.map(p=>`${p.gx},${p.gz}`).sort().join(';');if(key===coverKey&&cover)return;coverKey=key;
  if(cover){scene.remove(cover);const materials=new Set();cover.traverse(o=>{if(o.isMesh&&cover.userData.privateResources){o.geometry.dispose();materials.add(o.material);}});materials.forEach(m=>m.dispose());}
  if(reefCover){scene.remove(reefCover);const materials=new Set();reefCover.traverse(o=>{if(o.isMesh&&reefCover.userData.privateResources){o.geometry.dispose();materials.add(o.material);}});materials.forEach(m=>m.dispose());}
@@ -123,7 +134,7 @@ function save(){
  try{localStorage.setItem(SAVE_KEY,serialize(state));saveStatus(fallbackLook?'ui.savedFallback':'ui.saved');dirty=false;}catch{saveStatus('ui.saveUnavailable');}
 }
 function sync(){
- residents?.sync();garden?.sync();syncCover();
+ residents?.sync();garden?.sync();marineLife.setBuildings(state.buildings);syncCover();
  const available=liveWild(state);
  for(const [id,g] of wildMeshes)if(!available.some(r=>r.id===id)){scene.remove(g);wildMeshes.delete(id);}
  for(const r of available)if(!wildMeshes.has(r.id)){
@@ -296,12 +307,12 @@ function pick(){
  }
  if(target){target.distance=camera.position.distanceTo(target.point);const plant=state.plots[cellKey(target.gx,target.gz)];target.outOfReach=target.distance>((target.wildId||plant?.growth>=1)?3.8:6);}
  tileOutline.visible=!!target&&locked&&!target.outOfReach;if(target)tileOutline.position.set(target.gx*2,(target.baseY??0)+.035,target.gz*2);
- if(preview){preview.visible=!!target&&locked&&!target.outOfReach;if(target){const b=selectedBuild();preview.position.set(b.gx*2,baseOf(b)+b.level*2.4,b.gz*2);preview.rotation.y=b.rotation*Math.PI/2;const valid=validateBuild(state,b).ok&&!intersectsPlayer(b);preview.traverse(o=>{if(o.isMesh)o.material.color.set(valid?'#d8f5a5':'#f49471');});}}
+ if(preview){preview.visible=!!target&&locked&&!target.outOfReach;if(target){const b=selectedBuild();preview.position.set(b.gx*2,baseOf(b)+b.level*2.4,b.gz*2);preview.rotation.y=b.rotation*Math.PI/2;const valid=validateBuild(state,b).ok&&!intersectsPlayer(b)&&!marineLife.overlapsBuilding(b);preview.traverse(o=>{if(o.isMesh)o.material.color.set(valid?'#d8f5a5':'#f49471');});}}
  let label='';if(target&&locked){const p=state.plots[cellKey(target.gx,target.gz)];
   if(target.outOfReach)label=t('target.closer');
   else if(target.wildId){const r=WILD_RESOURCES.find(r=>r.id===target.wildId);label=tool===4?t(isFlower(r.kind)?'target.gatherFlowers':'target.chop'):t('target.wild',{noun:t('tree.'+r.kind)});}
   else
-  if(tool===5){const b=selectedBuild(),v=validateBuild(state,b);label=v.ok?(intersectsPlayer(b)?t('message.stepAside'):''):i18n.message(v);}
+  if(tool===5){const b=selectedBuild(),v=validateBuild(state,b);label=v.ok?(intersectsPlayer(b)?t('message.stepAside'):marineLife.overlapsBuilding(b)?t('message.creatureRoom'):''):i18n.message(v);}
   else if(tool===6)label=t(target.buildId?'target.remove':'target.building');
   else if(p?.seed)label=t('tree.'+p.seed)+' · '+(p.phase==='hole'?t('target.seed'):p.growth>=1?t('target.ready'):t('target.progress',{growth:Math.floor(p.growth*100),water:Math.round(p.water*100)}))+(p.phase==='filled'&&p.growth<1?'\n'+t(p.water<.2?'target.needsWater':'target.growing'):'');
   else label=p?.phase==='hole'?t('target.hole'):tool===0?t('target.dig'):tool===1?t('target.digFirst'):'';
@@ -310,7 +321,7 @@ function pick(){
 function updateTargetCue(){
  const p=target&&state.plots[cellKey(target.gx,target.gz)],r=target?.wildId&&WILD_RESOURCES.find(r=>r.id===target.wildId);
  let stage=r?5:stageFor(p),name=steps[stage][0],required=steps[stage][1],progress=stage===4?(p?.growth??0)*100:0,wrong=false,blocked=false;
- if(tool===5){name='build';required=5;blocked=target&&(!validateBuild(state,selectedBuild()).ok||intersectsPlayer(selectedBuild()));}
+ if(tool===5){name='build';required=5;blocked=target&&(!validateBuild(state,selectedBuild()).ok||intersectsPlayer(selectedBuild())||marineLife.overlapsBuilding(selectedBuild()));}
  else if(tool===6){name='remove';required=6;blocked=!target?.buildId;}
  else if(tool===0&&target&&!target.wildId)blocked=worldBlocked(state,target.gx,target.gz);
  if(stage===5){name=isFlower(r?.kind)||isFlower(p?.seed)?'hand':'axe';if(chopProgress)progress=chopProgress*100;}
@@ -350,7 +361,7 @@ function act(){
  if(target.wildId){toast('message.axeWild');failureUntil=elapsed+.8;return;}
  const {gx,gz}=target;let result;
  if(tool===0)result=dig(state,gx,gz);if(tool===1)result=plant(state,gx,gz,seedKeys[seedIndex]);if(tool===2)result=fill(state,gx,gz);
- if(tool===5){const b=selectedBuild();result=intersectsPlayer(b)?{ok:false,code:'message.stepAside',params:{}}:build(state,b);}
+ if(tool===5){const b=selectedBuild();result=intersectsPlayer(b)?{ok:false,code:'message.stepAside',params:{}}:marineLife.overlapsBuilding(b)?{ok:false,code:'message.creatureRoom',params:{}}:build(state,b);}
  if(tool===6)result=remove(state,target.buildId);
  if(result){if(!result.ok)failureUntil=elapsed+.8;toast(result);if(result.ok){dirty=true;swing=.25;audio.play(['dig','plant','fill','water','harvest','build','remove'][tool]);burst(gx,gz,undefined,target.baseY??0);sync();save();}}
 }
@@ -390,10 +401,11 @@ function updateReading(now){
  for(const [id,g] of buildMeshes){const b=state.buildings.find(x=>x.id===id);add(g,{id:'build:'+id,key:'piece.'+b.kind,material:b.material,picture:`piece:${b.kind}:${b.material}`});}
  for(const [id,g] of residents.models){const r=state.residents.find(x=>x.id===id);if(r?.x!==null)add(g,{id:'resident:'+id,key:r.habitat==='ocean'?'noun.diver':'noun.resident',picture:`${r.habitat==='ocean'?'diver':'resident'}:${r.variant}:${r.outfit??0}`});}
  for(const a of garden.readingObjects())add(a.model,{id:`animal:${a.kind}:${a.index}`,key:'animal.'+a.kind,picture:'animal:'+a.kind});
- for(const a of marine)add(a.model,{id:'fish:'+a.index,key:'animal.fish',picture:'animal:fish'});
+ for(const {actor:a,model} of marine)add(model,{id:'marine:'+a.id,focusKey:'marine:'+a.kind,key:'animal.'+a.kind,picture:'animal:'+a.kind+(a.kind==='fish'?':'+a.variant:'')});
  add(ground,{id:'ground',key:'noun.grass',icon:'grass'});add(seabed,{id:'sand',key:'noun.sand',icon:'fill'});
  readingRay.setFromCamera(center,camera);
- const hits=readingRay.intersectObjects([...roots,world.group,ocean,...garden.discoveries.values(),plotsGroup],true).filter(hit=>{
+ const readingObjects=[...roots,world.group,ocean,...garden.discoveries.values(),plotsGroup];
+ const describeHits=raw=>raw.filter(hit=>{
   for(let o=hit.object;o;o=o.parent)if(!o.visible)return false;return true;
  }).map(hit=>{
   let semantic=null;for(let o=hit.object;o;o=o.parent)if(o.userData.reading){semantic=o.userData.reading;break;}
@@ -402,7 +414,22 @@ function updateReading(now){
   const material=hit.object.material,opaque=!material?.transparent||material.opacity>.75;
   return {distance:hit.distance,semantic,opaque};
  });
- currentReading=readingFocus.update(nearestReading(hits),now);renderReading();
+ const direct=nearestReading(describeHits(readingRay.intersectObjects(readingObjects,true))),candidates=[];
+ if(!direct||['noun.grass','noun.sand','noun.soil','noun.hole'].includes(direct.key)){
+  const forward=camera.getWorldDirection(new THREE.Vector3()),point=new THREE.Vector3(),direction=new THREE.Vector3();
+  for(const {actor:a,model} of marine){
+   point.set(a.x,a.y+(a.profile.minY+a.profile.maxY)*.5,a.z);direction.copy(point).sub(camera.position);
+   const distance=direction.length(),front=direction.dot(forward);if(front<=0||distance>12+a.profile.radius)continue;
+   direction.normalize();const theta=Math.acos(THREE.MathUtils.clamp(direction.dot(forward),-1,1)),radius=Math.atan2(a.profile.radius,distance);
+   if(theta>Math.min(Math.PI/30,radius+Math.PI/90))continue;
+   readingRay.set(camera.position,direction);
+   const hit=nearestReading(describeHits(readingRay.intersectObjects(readingObjects,true)));
+   // An actual mesh must be first, not just a generous angular/bounds proxy.
+   if(hit?.id!==model.userData.reading.id)continue;
+   candidates.push({semantic:hit,distance,forward:front,angle:theta,angularRadius:radius,visible:true});
+  }
+ }
+ currentReading=readingFocus.update(assistedReading(direct,candidates),now);renderReading();
 }
 function setupLocaleUI(){
  for(const select of document.querySelectorAll('.languageSelect')){
@@ -444,14 +471,18 @@ function frame(now){
   const floor=floorAt(pos.x,pos.z),ceil=reefCeiling(reefSolids,pos.x,pos.z,feet,Math.min(Infinity,...state.buildings.flatMap(boxes).filter(a=>touches(a,pos.x,pos.z)&&a.minY>=feet+1.6).map(a=>a.minY)));
   const vertical=verticalStep({x:pos.x,z:pos.z,feet,vy,dt,forward:(keys.has('KeyW')?1:0)-(keys.has('KeyS')?1:0),pitch,rise:keys.has('Space'),dive:keys.has('KeyC')||keys.has('ControlLeft')||keys.has('ControlRight'),floor,ceil});feet=vertical.feet;vy=vertical.vy;
   if(dx||dz||feet!==beforeFeet||Object.values(state.plots).some(p=>p.growth<1&&p.water>0))dirty=true;
-  for(const {model,index:i} of marine){const t=livingTime*(.23+(i%3)*.025)+i*.72,cx=(i%3-1)*6,cz=48+Math.floor(i/3)*3;model.position.set(cx+Math.sin(t)*3.6,-4.7+Math.sin(t*.8+i)*.65,cz+Math.cos(t)*2);model.rotation.y=Math.atan2(Math.cos(t)*3.6,-Math.sin(t)*2);animateMarineAnimal(model,{time:livingTime+i,swim:1});}
+  marineLife.update(dt,{x:pos.x,y:feet+1.65,z:pos.z});poseMarine(dt);
   if(cover)animateMeadowCover(cover,{time:livingTime});
 
  }
  // Spend the shadow map on the nearby world, including ocean houses, not the whole distant orchard.
  const shadowX=Math.round(pos.x/2)*2,shadowZ=Math.round(pos.z/2)*2,shadowY=terrainHeight(pos.x,pos.z);sun.target.position.set(shadowX,shadowY,shadowZ);sun.position.set(shadowX-24,shadowY+38,shadowZ+16);
  camera.position.set(pos.x,feet+1.7,pos.z);camera.rotation.set(pitch,yaw,0,'YXZ');camera.updateMatrixWorld();pick();updateReading(now);
- const underwater=camera.position.y<TERRAIN.waterY;$('hud').classList.toggle('inOcean',pos.z>30);scene.background.set(underwater?'#5ba9b4':'#b7d7d7');scene.fog.color.copy(scene.background);scene.fog.near=underwater?8:38;scene.fog.far=underwater?48:118;waterSurface.material.opacity=underwater?.18:.48;
+ // Reading a foreground creature must not suggest cultivating the sand behind it.
+ // This is presentation only: building/removal feedback and the action ray stay intact.
+ const watchingMarine=locked&&!menuReading&&currentReading?.id?.startsWith('marine:')&&tool<5&&!target?.buildId&&!target?.wildId&&!target?.plot;
+ $('hud').classList.toggle('watchingMarine',!!watchingMarine);if(watchingMarine)tileOutline.visible=false;
+ const underwater=camera.position.y<TERRAIN.waterY;$('hud').classList.toggle('inOcean',pos.z>30);scene.background=underwater?seaBackground:dayBackground;scene.fog.color.set(underwater?'#5c9fa7':'#b7d7d7');scene.fog.near=underwater?8:38;scene.fog.far=underwater?48:118;waterSurface.material.opacity=underwater?.18:.48;
  const swimMode=!locked||pos.z<23?'hidden':swimmingAt(pos.x,pos.z,feet)?'swim':'shore';if(swimMode!==swimHudMode){swimHudMode=swimMode;$('swimCue').hidden=swimMode==='hidden';$('swimCue').innerHTML=icon('swim')+(swimMode==='swim'?`<span>↑ <kbd>${t('control.space')}</kbd> &nbsp; ↓ <kbd>C</kbd></span>`:`<span>${icon('reef')} ↓</span>`);}
  stream.visible=false;
  if(locked&&held&&tool===3&&target&&!target.outOfReach&&!target.wildId){const result=water(state,target.gx,target.gz,dt);if(result.ok){dirty=true;stream.visible=true;audio.play('water');if(frames%6===0)splash(target.gx*2,target.gz*2);const origin=new THREE.Vector3(...(toolMesh.userData.spout??[0,.2,-.2])).applyMatrix4(toolMesh.matrixWorld),end=new THREE.Vector3(target.gx*2,.12,target.gz*2);for(let i=0;i<28;i++){const t=((i/28)+elapsed*1.8)%1;const p=origin.clone().lerp(end,t);p.y+=Math.sin(t*Math.PI)*.35;waterPositions[i*3]=p.x;waterPositions[i*3+1]=p.y;waterPositions[i*3+2]=p.z;}waterGeometry.attributes.position.needsUpdate=true;}else if(frames%45===0)toast(result);}
@@ -480,4 +511,4 @@ function frame(now){
 }
 requestAnimationFrame(frame);
 // Read-only observation surface for browser verification and independent criticism.
-Object.defineProperty(window,'kauris',{value:Object.freeze({snapshot:()=>JSON.parse(JSON.stringify({state,player:{x:pos.x,z:pos.z,feet,yaw,pitch},swimming:swimmingAt(pos.x,pos.z,feet),locked,fallbackLook,tool:tools[tool].key,seed:seedKeys[seedIndex],piece:pieceKeys[pieceIndex],material:MATERIALS[materialIndex],level,rotation,target:target?{gx:target.gx,gz:target.gz,baseY:target.baseY,point:target.point,placement:tool===5?selectedBuild():null,buildId:target.buildId,wildId:target.wildId,outOfReach:target.outOfReach}:null,chop:{key:chop.key,progress:chopProgress,impacts:totalImpacts},wild:liveWild(state),places:PLACES,homes:findHomes(state.buildings),residents:(state.residents??[]).map(r=>({...r,walking:residents.motion.get(r.id)?.walking??0})),garden:{animals:garden.snapshot(),discoveries:activeDiscoveries(state),audio:audio.snapshot()},language:i18n.language,reading:currentReading,performance:{averageFrameMs:timing.reduce((a,b)=>a+b,0)/Math.max(1,timing.length),calls:renderer.info.render.calls,triangles:renderer.info.render.triangles}}))}),writable:false});
+Object.defineProperty(window,'kauris',{value:Object.freeze({snapshot:()=>JSON.parse(JSON.stringify({state,player:{x:pos.x,z:pos.z,feet,yaw,pitch},swimming:swimmingAt(pos.x,pos.z,feet),locked,fallbackLook,tool:tools[tool].key,seed:seedKeys[seedIndex],piece:pieceKeys[pieceIndex],material:MATERIALS[materialIndex],level,rotation,target:target?{gx:target.gx,gz:target.gz,baseY:target.baseY,point:target.point,placement:tool===5?selectedBuild():null,buildId:target.buildId,wildId:target.wildId,outOfReach:target.outOfReach}:null,chop:{key:chop.key,progress:chopProgress,impacts:totalImpacts},wild:liveWild(state),places:PLACES,homes:findHomes(state.buildings),residents:(state.residents??[]).map(r=>({...r,walking:residents.motion.get(r.id)?.walking??0})),garden:{animals:garden.snapshot(),discoveries:activeDiscoveries(state),audio:audio.snapshot()},language:i18n.language,reading:currentReading,marine:marineLife.snapshot(),marineTime:marineLife.time,performance:{averageFrameMs:timing.reduce((a,b)=>a+b,0)/Math.max(1,timing.length),calls:renderer.info.render.calls,triangles:renderer.info.render.triangles}}))}),writable:false});
