@@ -1,7 +1,7 @@
 // Authoritative paid toy definitions, anchors and physical rules. No renderer/state cycle.
 import {TERRAIN,terrainHeight,buildBase,inWorld} from './terrain.js';
 import {buildingBoxes,baseOf,touches} from './building.js';
-import {WILD_RESOURCES,WORLD_OBSTACLES,wildFootprint,cellFootprint,overlaps} from './world-data.js';
+import {WILD_RESOURCES,WORLD_OBSTACLES,wildFootprint,cellFootprint,overlaps,nearbyResources,localSolidBounds} from './world-data.js';
 import {activeDiscoveries} from './garden.js';
 const box=(minX,maxX,minY,maxY,minZ,maxZ)=>({minX,maxX,minY,maxY,minZ,maxZ});
 const post=(x,z,height,width=.1)=>box(x-width/2,x+width/2,0,height,z-width/2,z+width/2);
@@ -43,7 +43,7 @@ const no=code=>result(false,code);
 function blockedNatural(s,p){
  if(p.baseY!==0||p.hostId!==null)return false;
  const footprint=cellFootprint(p.gx,p.gz);
- return activeDiscoveries(s).some(d=>overlaps(footprint,d.bounds))||WILD_RESOURCES.some(r=>!s.wildRemoved?.includes(r.id)&&overlaps(footprint,wildFootprint(r)))||WORLD_OBSTACLES.some(o=>!s.worldHidden?.includes(o.id)&&overlaps(footprint,o));
+ return activeDiscoveries(s).some(d=>overlaps(footprint,d.bounds))||nearbyResources(s,(footprint.minX+footprint.maxX)/2,(footprint.minZ+footprint.maxZ)/2,5).some(r=>overlaps(footprint,wildFootprint(r)))||localSolidBounds((footprint.minX+footprint.maxX)/2,(footprint.minZ+footprint.maxZ)/2,5).some(o=>overlaps(footprint,o))||WORLD_OBSTACLES.some(o=>!s.worldHidden?.includes(o.id)&&overlaps(footprint,o));
 }
 export function validateDelight(s,p,{legacy=false}={}){
  const spec=Object.hasOwn(DELIGHTS,p?.kind)?DELIGHTS[p.kind]:null;if(!spec||!Number.isInteger(p.gx)||!Number.isInteger(p.gz)||!Number.isInteger(p.rotation)||p.rotation<0||p.rotation>3||!Number.isFinite(p.baseY)||!inWorld(p.gx*2-1,p.gz*2-1)||!inWorld(p.gx*2+1,p.gz*2+1))return no('message.invalidToy');

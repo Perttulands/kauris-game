@@ -1,11 +1,12 @@
 import {activeDiscoveries,seedUnlocked,plantVariation,readGarden} from './garden.js';
 import {reconcileResidents,readResidents} from './residents.js';
 import {edgeKey,wallLike,baseOf,adjacentCells} from './building.js';
+import {buildSiteAt} from './world-layout.js';
 import {TERRAIN,buildBase,inWorld,terrainHeight} from './terrain.js';
 import {readDelights,propBoxes,boxesOverlap} from './delights.js';
 import {buildingBoxes} from './building.js';
 export {edgeKey} from './building.js';
-import {WILD_RESOURCES,WORLD_OBSTACLES,wildFootprint,cellFootprint,overlaps} from './world-data.js';
+import {WILD_RESOURCES,WORLD_OBSTACLES,wildFootprint,cellFootprint,overlaps,nearbyResources,resourceRecord,resourceSuppressed,localSolidBounds} from './world-data.js';
 export const SAVE_KEY = 'kauris-meadow-v1';
 export const SEEDS = {
   oak: {name:'Oak', resource:'wood', yield:18, seconds:20, color:'#b6ce72'},
@@ -22,7 +23,7 @@ export const SEEDS = {
 export const PIECES = {floor:{name:'Floor',cost:2},wall:{name:'Wall',cost:3},window:{name:'Window',cost:3},door:{name:'Doorway',cost:4},roof:{name:'Roof',cost:3}};
 export const MATERIALS = ['wood','copper','iron','diamond','fiber'];
 export const cellKey=(gx,gz)=>`${gx},${gz}`;
-export const validCell=(gx,gz)=>Number.isInteger(gx)&&Number.isInteger(gz)&&Math.abs(gx)<=13&&Math.abs(gz)<=13;
+export const validCell=(gx,gz)=>Number.isSafeInteger(gx)&&Number.isSafeInteger(gz)&&((Math.abs(gx)<=13&&Math.abs(gz)<=13)||buildSiteAt(gx,gz)?.baseY===0);
 const ok=(code,params={},extra={})=>({ok:true,code,params,...extra});
 const no=(code,params={})=>({ok:false,code,params});
 export function freshState(){
@@ -36,7 +37,7 @@ export const liveWild=s=>WILD_RESOURCES.filter(r=>!s.wildRemoved?.includes(r.id)
 export const activeObstacles=s=>WORLD_OBSTACLES.filter(o=>!s.worldHidden?.includes(o.id));
 export function worldBlocked(s,gx,gz){
  const cell=cellFootprint(gx,gz);
- return activeDiscoveries(s).some(d=>overlaps(cell,d.bounds))||liveWild(s).some(r=>overlaps(cell,wildFootprint(r)))||activeObstacles(s).some(o=>overlaps(cell,o));
+ return activeDiscoveries(s).some(d=>overlaps(cell,d.bounds))||nearbyResources(s,gx*2,gz*2,4).some(r=>overlaps(cell,wildFootprint(r)))||localSolidBounds(gx*2,gz*2).some(o=>overlaps(cell,o))||activeObstacles(s).some(o=>overlaps(cell,o));
 }
 export function mergeWorld(s){
  const occupied=[...Object.values(s.plots),...s.buildings.flatMap(b=>adjacentCells(b)),...(s.delights??[])].map(p=>cellFootprint(p.gx,p.gz,.35));
@@ -46,7 +47,8 @@ export function mergeWorld(s){
  return s;
 }
 export function harvestWild(s,id){
- const r=liveWild(s).find(r=>r.id===id);if(!r)return no('message.alreadyGathered');
+ const r=resourceRecord(id);if(!r||s.wildRemoved?.includes(id)||resourceSuppressed(s,r))return no('message.alreadyGathered');
+ if(s.wildRemoved.length>=5000)return no('message.worldLimit');
  const spec=SEEDS[r.kind];s.wildRemoved.push(id);s.inventory[spec.resource]+=spec.yield;s.stats.harvested++;
  return ok('message.yield',{count:spec.yield,material:spec.resource},{resource:spec.resource,amount:spec.yield});
 }
@@ -56,6 +58,7 @@ export function validateDig(s,gx,gz){
  if(worldBlocked(s,gx,gz))return no('message.clearWild');
  if(s.buildings.some(b=>!wallLike(b)&&b.gx===gx&&b.gz===gz&&baseOf(b)===0))return no('message.removeBuilding');
  const p=s.plots[cellKey(gx,gz)];
+ if(!p&&Object.keys(s.plots).length>=729)return no('message.plotLimit');
  if(p?.growth>0)return no('message.matureAxe');
  if(p?.phase==='hole'&&!p.seed)return no('message.holeReady');
  return ok('message.dug');
@@ -161,7 +164,7 @@ export function deserialize(raw){
  }
  for(const [field,known] of [['wildRemoved',WILD_RESOURCES],['worldHidden',WORLD_OBSTACLES]]){
   if(d[field]!==undefined&&(!Array.isArray(d[field])||d[field].length>5000||d[field].some(id=>typeof id!=='string')))throw Error('Invalid world record');
-  s[field]=[...new Set((d[field]??[]).filter(id=>known.some(x=>x.id===id)))];
+  s[field]=[...new Set((d[field]??[]).filter(id=>known.some(x=>x.id===id)||(field==='wildRemoved'&&resourceRecord(id))))];
  }
  for(const k of Object.keys(s.stats))s.stats[k]=Number.isSafeInteger(d.stats?.[k])&&d.stats[k]>=0?d.stats[k]:0;
  s.residents=readResidents(d.residents);for(const r of s.residents)if(r.rideId!==null){const p=s.delights.find(p=>p.id===r.rideId&&p.kind==='lift');if(!p||p.baseY!==r.baseY||r.x===null||Math.abs(r.x-p.gx*2)>.825||Math.abs(r.z-p.gz*2)>.825)throw Error('Invalid resident lift support');}reconcileResidents(s);

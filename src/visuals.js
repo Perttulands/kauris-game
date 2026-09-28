@@ -158,10 +158,7 @@ export function createWorld({occupiedCells = [], hiddenLandmarks = []} = {}) {
   const windmill = WORLD_OBSTACLES.find(o=>o.id==='windmill');
   const windmillPlace = PLACES.find(p=>p.id==='windmill');
   const showWindmill = !!windmill && !hiddenLandmarks.includes('windmill') && !saved.some(a=>overlaps(a,windmill));
-  for (const [inner, outer, y1, y2, mat] of [[0, 2, -.02, -.15, 'grass'], [2, 2.4, -.15, -.75, 'earth'], [2.4, 4, -.75, -.83, 'sand'], [4, 4.5, -.83, -1.35, 'sandDark'], [4.5, 5.8, -1.35, -1.4, 'sand'], [5.8, 7, -1.4, -2.4, 'earthDark']]) {
-    const g = ringGeometry(inner, outer, y1, y2);const pos=g.attributes.position,idx=g.index?.array;const keep=[];for(let j=0;j<(idx?.length??pos.count);j+=3){const ids=[0,1,2].map(k=>idx?idx[j+k]:j+k);if(ids.every(i=>pos.getZ(i)>=27))continue;for(const i of ids)keep.push(i);}g.setIndex(keep);b.geometry(g,mat);g.dispose();
-  }
-
+  // Continuous shared terrain replaces the former visual-only island skirt.
   // All reachable trees and flowers are authoritative, harvestable lead-owned resources.
   let seed = 127; const random = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
   for (let i = 0; i < 230; i++) {
@@ -178,56 +175,8 @@ export function createWorld({occupiedCells = [], hiddenLandmarks = []} = {}) {
       b.add('ball',j%3?'grassDark':'grassLight',x+Math.cos(angle)*reach,h*.45,z+Math.sin(angle)*reach,.027,h*.59,.057,.32,angle,-.27);
     }
   }
-  // Broken shoreline reed beds frame the grove and mineral garden from outside bounds.
-  for(const [cx,cz] of [[-28.7,8],[28.6,-12],[-18,-29]]) {
-    for(let i=0;i<18;i++) {
-      const x=cx+(random()-.5)*2.4,z=cz+(random()-.5)*6;
-      if(Math.abs(x)<27&&Math.abs(z)<27)continue;
-      const h=.3+random()*.55;
-      for(let j=0;j<3;j++)b.add('cone',j%2?'grassDark':'grassLight',x+j*.065,-.7+h*.5,z+j*.07,.065,h,.05,.12,i,.17);
-    }
-  }
-  for (let i = 0; i < 38; i++) {
-    const a = i * 2.399, r = 29.5 / Math.max(Math.abs(Math.cos(a)),Math.abs(Math.sin(a))) + random()*3;
-    const x = Math.cos(a)*r,z=Math.sin(a)*r,s=.6+random()*1.15;if(z>27&&Math.abs(x)<28)continue;
-    b.add('rock', i % 2 ? 'rock' : 'rockLight', x,-.65,z,s,s*.65,s*.8,random()*.4,a);
-  }
-  // Raised coastal headlands sit entirely beyond the editable 54m square.
-  // Layered flat terraces create a strong silhouette without changing walk height.
-  const headland = (x,z,sx,sz,height) => {
-    b.add('cylinder','earthDark',x,-1,z,sx,3.4,sz,0,.17);
-    b.add('cylinder','rock',x,.62,z,sx*.96,.28,sz*.96,0,.17);
-    b.add('cylinder','grassDark',x,.83,z,sx*.96,.16,sz*.96,0,.17);
-    b.add('cylinder','earth',x-1,1.15,z-.5,sx*.82,1.5,sz*.80,0,.17);
-    b.add('cylinder','grass',x-1,1.94,z-.5,sx*.83,.14,sz*.81,0,.17);
-    b.add('cylinder','rock',x-1.5,(height+1.9)/2,z-.9,sx*.64,height-1.9,sz*.62,0,.17);
-    b.add('cylinder','grassDark',x-1.5,height+.05,z-.9,sx*.65,.16,sz*.63,0,.17);
-    for(let i=0;i<9;i++){const a=i*2.399,dx=Math.cos(a),dz=Math.sin(a);
-      b.add('rock',i%3?'rock':'rockLight',x+dx*sx*.83,.65+i%3*.33,z+dz*sz*.82,1.4+i%2,.9+i%3*.4,1.2,0,a,.18);
-      if(i%2)b.add('ball','leafDark',x+dx*sx*.64,2.13,z+dz*sz*.6,1.1,.55,.8,0,a);
-    }
-  };
-  headland(-25,-38,12,10,3.2);
-  headland(34,-36,12,10,5.6);
-  headland(-39,16,10,13,4.2);
-  for(const [x,y,z,kind,scale] of [[-31,3.33,-39,'oak',1.25],[-28,3.33,-42,'birch',1.1],
-    [31,5.73,-38,'pine',1.5],[35,5.73,-40,'pine',1.2],[28,5.73,-35,'pine',1.0],
-    [-42,4.33,14,'pine',1.3],[-39,4.33,18,'oak',1.0]]) {
-    const t=createTree(kind);t.position.set(x,y,z);t.scale.setScalar(scale);b.absorb(t);
-  }
-  // Far islands form a broken horizon, well behind the taller nearby headlands.
-  for (const [x,z,s] of [[-67,-82,12],[12,-100,18],[79,-42,14],[-94,24,20],[72,79,14]]) {
-    b.add('rock','earthDark',x,-3.2,z,s,6,s*.7);
-    b.add('rock','grassDark',x,-.5,z,s*.88,4,s*.63);
-    for(let i=0;i<3;i++) b.add('cone','pine',x+(i-1)*3,1.9+i%2,z,.9,3.5,.9);
-  }
-  // The working clearing uses the lead's continuous ground treatment.
-  // Keep organic perimeter clumps above, without grid-aligned tufts between cells.
-  for (let i=0;i<60;i++) {
-    const a=random()*Math.PI*2,r=40+random()*70,x=Math.cos(a)*r,z=Math.sin(a)*r;
-    if(Math.abs(x)<36&&z>-36&&z<70)continue;
-    b.add('box',i%4?'waterLight':'foam',x,-2.035,z,1+random()*4,.009,.08+random()*.1,0,.1);
-  }
+  // Old outside headlands, baked trees, islands and foam are retired: these
+  // coordinates now belong to authoritative streamed terrain and resources.
   // Broad cloud banks give the open working meadow a composed sky.
   for (const [x,y,z,s] of [[-52,27,-65,1],[24,32,-90,1.4],[75,23,-35,.85],[-65,22,48,1.1]]) {
     for(let i=0;i<4;i++) b.add('ball','cloud',x+(i-1.5)*4*s,y+(i%2)*1.3*s,z,5*s,1.5*s,2.5*s,0,i*.6);

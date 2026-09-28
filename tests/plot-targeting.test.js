@@ -37,3 +37,13 @@ test('adjacent dug plots retain their own surface identity without internal divi
  assert.equal(a.length,4);assert.ok(a.every(m=>m.userData.plot==='0,3'));
  assert.ok(!a.some(m=>m.position.x===1&&m.position.y===-.3));
 });
+
+test('rebuilt outer hole is ray-ready before a renderer pass between seed and cover',()=>{
+ const state=freshState();dig(state,-4,-33);plant(state,-4,-33,'oak');
+ const origin=new Vector3(-7.982540927044815,1.7,-62.015786876162615),point=new Vector3(-8.004445206145274,-.20686899599330139,-66.99399999994785);
+ const ray=new Raycaster(origin,point.sub(origin).normalize(),0,6);
+ // A command replaces these meshes; the next click may precede WebGLRenderer.render.
+ const rebuilt=plotSurfaces(state.plots['-4,-33'],state.plots,materials);
+ assert.equal(ray.intersectObjects(rebuilt)[0]?.object.userData.plot,'-4,-33');
+ assert.ok(fill(state,-4,-33).ok);
+});

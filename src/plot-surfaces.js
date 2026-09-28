@@ -1,4 +1,6 @@
-import {Mesh} from 'three';
+import {Mesh,PlaneGeometry} from 'three';
+
+const outerHoleBottom=new PlaneGeometry(2,2).rotateX(-Math.PI/2);
 
 // The visible soil and exposed inner walls are the plot's action surfaces too.
 // Using these same triangles avoids an invisible proxy extending beyond the hole.
@@ -10,8 +12,9 @@ export function plotSurfaces(plot,plots,{wallGeometry,wallMaterial,soilGeometry,
   wall.position.set(gx*2+dx,-.3,gz*2+dz);wall.rotation.y=turn*Math.PI/2;
   surfaces.push(wall);
  }
+ if(plot.phase==='hole'&&(Math.abs(gx)>13||Math.abs(gz)>13)){const bottom=new Mesh(outerHoleBottom,soilMaterial);bottom.position.set(gx*2,-.6,gz*2);surfaces.push(bottom);}
  const soil=new Mesh(soilGeometry,soilMaterial);
  soil.position.set(gx*2,plot.phase==='hole'?-.59:.012,gz*2);surfaces.push(soil);
- for(const mesh of surfaces){mesh.receiveShadow=true;mesh.userData.plot=key;}
+ for(const mesh of surfaces){mesh.receiveShadow=true;mesh.userData.plot=key;mesh.updateMatrixWorld(true);}
  return surfaces;
 }

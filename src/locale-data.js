@@ -187,7 +187,7 @@ export const LOCALES = {
     "message.newSeed": "New seed! Find it in the book [J].",
     "message.secret": "You found a hidden place!",
     "message.alreadyGathered": "Already gathered.",
-    "message.insideMeadow": "You can only dig in the meadow.",
+    "message.insideMeadow": "Dig on flat grass in the meadow or a clearing.",
     "message.clearWild": "Gather the plant first, or choose an empty spot.",
     "message.removeBuilding": "Remove the building piece here first.",
     "message.matureAxe": "Use the axe when the plant is fully grown.",
@@ -279,7 +279,17 @@ export const LOCALES = {
     "ui.readyToBuild": "Ready to build",
     "ui.explore": "Explore",
     "ui.scrollChoices": "More below",
-    "target.aim": "Aim at nearby ground or an object"
+    "target.aim": "Aim at nearby ground or an object",
+    "message.plotLimit": "There are 729 planting spots already. Fill an empty hole or harvest a plant first.",
+    "message.worldLimit": "This world has reached its wild gathering limit. You can still grow your own trees.",
+    "region.orchard": "Orchard",
+    "region.reef": "Shell reef",
+    "region.birchDowns": "Birch hill",
+    "region.reedCove": "Reed bay",
+    "region.amberBay": "Stone beach",
+    "region.seagrassSound": "Seagrass channel",
+    "region.outerMeadow": "Meadow",
+    "region.outerSea": "Sea"
   },
   "fi": {
     "language.label": "Kieli",
@@ -468,7 +478,7 @@ export const LOCALES = {
     "message.newSeed": "Uusi siemen! Löydät sen kirjasta [J].",
     "message.secret": "Löysit piilopaikan!",
     "message.alreadyGathered": "Jo kerätty.",
-    "message.insideMeadow": "Voit kaivaa vain niityllä.",
+    "message.insideMeadow": "Kaiva tasaisella nurmella niityllä tai aukiolla.",
     "message.clearWild": "Kerää ensin kasvi tai valitse tyhjä paikka.",
     "message.removeBuilding": "Poista ensin tässä oleva rakennusosa.",
     "message.matureAxe": "Käytä kirvestä, kun kasvi on täysikasvuinen.",
@@ -560,7 +570,17 @@ export const LOCALES = {
     "ui.readyToBuild": "Voit rakentaa",
     "ui.explore": "Tutki",
     "ui.scrollChoices": "Lisää alempana",
-    "target.aim": "Tähtää maahan tai lähellä olevaan esineeseen"
+    "target.aim": "Tähtää maahan tai lähellä olevaan esineeseen",
+    "message.plotLimit": "Istutuspaikkoja on jo 729. Täytä tyhjä kuoppa tai kerää kasvi ensin.",
+    "message.worldLimit": "Tämän maailman luonnonkasvien keruuraja on täynnä. Voit yhä kasvattaa omia puita.",
+    "region.orchard": "Puutarha",
+    "region.reef": "Simpukkariutta",
+    "region.birchDowns": "Koivumäki",
+    "region.reedCove": "Ruokolahti",
+    "region.amberBay": "Kiviranta",
+    "region.seagrassSound": "Meriruohosalmi",
+    "region.outerMeadow": "Niitty",
+    "region.outerSea": "Meri"
   },
   "sv": {
     "language.label": "Språk",
@@ -749,7 +769,7 @@ export const LOCALES = {
     "message.newSeed": "Nytt frö! Det finns i boken [J].",
     "message.secret": "Du hittade ett gömställe!",
     "message.alreadyGathered": "Redan insamlad.",
-    "message.insideMeadow": "Du kan bara gräva på ängen.",
+    "message.insideMeadow": "Gräv på platt gräs på ängen eller i en glänta.",
     "message.clearWild": "Skörda växten först eller välj en ledig plats.",
     "message.removeBuilding": "Ta bort byggdelen här först.",
     "message.matureAxe": "Använd yxan när växten är fullvuxen.",
@@ -841,6 +861,16 @@ export const LOCALES = {
     "ui.readyToBuild": "Redo att bygga",
     "ui.explore": "Utforska",
     "ui.scrollChoices": "Mer nedan",
-    "target.aim": "Sikta på marken eller ett föremål i närheten"
+    "target.aim": "Sikta på marken eller ett föremål i närheten",
+    "message.plotLimit": "Det finns redan 729 planteringsplatser. Fyll ett tomt hål eller skörda en växt först.",
+    "message.worldLimit": "Du har nått gränsen för att samla vilda växter i världen. Du kan fortfarande odla egna träd.",
+    "region.orchard": "Trädgård",
+    "region.reef": "Snäckrevet",
+    "region.birchDowns": "Björkbacken",
+    "region.reedCove": "Vassviken",
+    "region.amberBay": "Stenstranden",
+    "region.seagrassSound": "Sjögrässundet",
+    "region.outerMeadow": "Äng",
+    "region.outerSea": "Hav"
   }
 };

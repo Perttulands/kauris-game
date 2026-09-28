@@ -44,4 +44,4 @@ test('small hosted lamp and curtain fit a complete room while large hammock resp
  const restored=deserialize(serialize(s));const next=placeDelight(restored,toy('lamp',0,0,0,.15,host));assert.ok(next.prop.id>screen.prop.id);
 });
 
-test('expanded offshore keeps every nonphysical backdrop rock beyond actual reachable bounds',async()=>{const {createOceanWorld}=await import('../src/ocean-visuals.js');const world=createOceanWorld({terrain:TERRAIN,heightAt:terrainHeight});assert.equal(world.userData.backdropBounds.length,54);assert.ok(world.userData.backdropBounds.every(b=>b.minZ>TERRAIN.maxZ+3));assert.ok(world.userData.reefSolids.length>100);});
+test('continuous terrain retires old unreachable backdrop rocks and retains physical reef',async()=>{const {createOceanWorld}=await import('../src/ocean-visuals.js');const world=createOceanWorld({terrain:TERRAIN,heightAt:terrainHeight});assert.deepEqual(world.userData.backdropBounds,[]);assert.ok(world.userData.reefSolids.length>100);});

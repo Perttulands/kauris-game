@@ -76,43 +76,7 @@ export function createOceanWorld({terrain,heightAt}){
  if(!terrain||typeof heightAt!=='function')throw new TypeError('Ocean visuals require authoritative terrain and heightAt');
  const root=new THREE.Group();root.name='shell-garden-ocean';
  const reefSolids=[],backdropBounds=[];
- // Continuous terrain extends into visual-only distance; reachable heights stay exact.
- const positions=[],colors=[],c0=new THREE.Color('#b4b398'),c1=new THREE.Color('#efdcba');
- const xs=[],zs=[];
- for(let x=terrain.minX-64;x<terrain.minX;x+=4)xs.push(x);
- for(let i=0;i<=54;i++)xs.push(terrain.minX+(terrain.maxX-terrain.minX)*i/54);
- for(let x=terrain.maxX+4;x<=terrain.maxX+64;x+=4)xs.push(x);
- for(let z=terrain.shoreStart;z<terrain.shoreEnd;z+=.5)zs.push(z);
- for(let z=terrain.shoreEnd;z<=terrain.maxZ+18;z++)zs.push(z);
- for(let z=terrain.maxZ+22;z<=terrain.maxZ+94;z+=4)zs.push(z);
- const vertex=(ix,iz)=>[xs[ix],heightAt(xs[ix],zs[iz]),zs[iz]];
- for(let iz=0;iz<zs.length-1;iz++)for(let ix=0;ix<xs.length-1;ix++){
-  const a=vertex(ix,iz),b=vertex(ix+1,iz),c=vertex(ix,iz+1),d=vertex(ix+1,iz+1);
-  for(const p of [a,c,b,b,c,d]){
-   positions.push(...p);
-   const channel=Math.exp(-Math.pow((p[0]-Math.sin(p[2]*.13)*2.4)/5.5,2));
-   const patch=.28+.19*Math.sin(p[0]*.34+Math.sin(p[2]*.19)*1.8)+.14*Math.cos(p[2]*.37-p[0]*.17);
-   const color=c0.clone().lerp(c1,THREE.MathUtils.clamp(patch+channel*.58,0,1));colors.push(color.r,color.g,color.b);
-  }
- }
- const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));geo.setAttribute('color',new THREE.Float32BufferAttribute(colors,3));geo.computeVertexNormals();
- const sandMaterial=new THREE.MeshStandardMaterial({vertexColors:true,roughness:1});
- sandMaterial.onBeforeCompile=shader=>{
-  shader.vertexShader='varying vec2 reefSandPosition;\n'+shader.vertexShader;
-  shader.vertexShader=shader.vertexShader.replace('#include <begin_vertex>','#include <begin_vertex>\nreefSandPosition=position.xz;');
-  shader.fragmentShader='varying vec2 reefSandPosition;\n'+shader.fragmentShader;
-  shader.fragmentShader=shader.fragmentShader.replace('#include <color_fragment>',`#include <color_fragment>
-   vec2 sandP=reefSandPosition;
-   float sandPatch=sin(sandP.x*.39+sin(sandP.y*.21)*1.7)+.65*cos(sandP.y*.48-sandP.x*.14);
-   float sandPhase=sandP.y*6.6+sin(sandP.y*.34+sandP.x*.18)*2.8+sin(sandP.x*.47)*3.1+sin(sandP.x*.19-sandP.y*.15)*2.2;
-   float sandAA=1.0-smoothstep(.4,3.2,fwidth(sandPhase));
-   float sandRidge=pow(.5+.5*sin(sandPhase),7.0)*sandAA*smoothstep(-.65,.7,sandPatch);
-   float sandBed=.5+.5*sin(sandP.x*.77+sin(sandP.y*.29)*1.8);
-   diffuseColor.rgb*=1.0-.13*sandRidge-.045*sandBed;
-  `);
- };
- sandMaterial.customProgramCacheKey=()=> 'kauris-reef-sand-ripples-v2';
- const ground=new THREE.Mesh(geo,sandMaterial);ground.name='ocean-ground';ground.receiveShadow=true;root.add(ground);
+ // Streamed indexed terrain now supplies both the seabed and its action ray.
  const b=new Batch();let seed=78912;const random=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};
  // Batch.add returns the exact transformed copy later merged into the rendered mesh.
  const addRock=(shape,mat,...args)=>{const geometry=b.add(shape,mat,...args);reefSolids.push(convexSolid(Array.from(geometry.attributes.position.array)));};
@@ -183,15 +147,7 @@ export function createOceanWorld({terrain,heightAt}){
   addRock('rough','shellShade',rx+side*3.55,base+.62,rz,.74,.83,.69,0,side*.25);
   cup(b,rx+side*3.25,base+.08,rz-1.05,1.06,side+2);
  }
- // Layered scenic reef ridges beyond the physical boundary hide the straight cutoff.
- // They are unreachable background forms, not new terrain or collider authority.
- const addBackdrop=(shape,mat,...args)=>{const g=b.add(shape,mat,...args),a=g.attributes.position.array;let minZ=Infinity,maxZ=-Infinity;for(let i=2;i<a.length;i+=3){minZ=Math.min(minZ,a[i]);maxZ=Math.max(maxZ,a[i]);}backdropBounds.push({minZ,maxZ});};
- for(let row=0;row<3;row++)for(let i=-4;i<=4;i++){
-  const x=rx+i*(6.3+row),z=terrain.maxZ+12+row*8+Math.sin(i*1.7)*1.4,y=heightAt(x,z),h=1.55+row*.62+(.5+.5*Math.cos(i*2.3+row))*1.15;
-  addBackdrop('rock',row%2?'stoneLight':'stone',x,y+h*.38,z,4.3+row*.6,h*.56,2.8+row*.9,.09,i*.23,.08);
-  addBackdrop('rough','stone',x+1,y+h*.66,z+.35,2.8,h*.41,2.1,0,i*.47);
-  if(row===0){for(let j=0;j<3;j++)kelp(b,x-1+j*.74,y+.35,z-.7,2.5+j*.4,i+j*.71);coral(b,x+.63,y+h*.79,z,1.5,i+5);}
- }
+ // Former visual-only far ridges are retired; the sea continues through chunks.
  // Sandy shell stepping motifs lead through the arch; never raised enough to hide a floor.
  for(let i=0;i<5;i++)scallop(b,rx+Math.sin(i*1.9)*.9,base-.07,rz-2+i*.58,.35+i*.027,.25);
  root.add(b.finish('reef-beds-and-shell-crown'));root.userData.reefSolids=reefSolids;root.userData.backdropBounds=backdropBounds;return root;
