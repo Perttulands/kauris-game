@@ -1,8 +1,8 @@
-# Kauris
+# Kauri's game
 
-I am making Kauris with my son.
+I am making Kauri's game with my son.
 
-Kauris is a peaceful first-person browser game about growing trees, exploring the sea and building a village. Its blocky world has ordinary, metal and diamond trees, flower gardens, friendly neighbours and an underwater reef. Play solo, gather materials and make a home above or below the water. There is no combat, drowning or oxygen timer.
+Kauri's game is a peaceful first-person browser game about growing trees, exploring the sea and building a village. Its blocky world has ordinary, metal and diamond trees, flower gardens, friendly neighbours and an underwater reef. Play solo, gather materials and make a home above or below the water. There is no combat, drowning or oxygen timer.
 
 Build with wood, copper, iron, crystal and woven fiber. Connect a water channel to a wheel and bell, light a curtain with a crystal lamp, or add a hammock and lift. Birds and crabs visit homes made for them. Offshore, an occasional whale swims past.
 
@@ -58,3 +58,5 @@ Aim at a nearby object and click the pictured hand to use it. Pour into a water 
 ## Explore
 
 Follow paths to discover unusual seeds. Flowers attract butterflies and bees, while deer and birds visit the garden. Swim from the shore to watch crabs, fish schools, sea turtles and an octopus among the reef's corals, sea stars and anemones. Build a crab shelter on the flat sand before the reef, or make an underwater room with crystal windows to watch the sea life outside.
+
+For a static web release, see [Hosting](HOSTING.md).

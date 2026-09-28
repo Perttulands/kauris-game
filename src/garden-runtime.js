@@ -4,7 +4,7 @@ import {activeDiscoveries,discover,gardenAttractors} from './garden.js';
 export function createGardenSystem({scene,getState,getPlayer,canStand,treeHeight=()=>3.5,onDiscover,getDelights=()=>null,flyClear=()=>true}){
  const discoveries=new Map(),animals=[];
  for(const [kind,count] of [['butterfly',12],['bee',6],['grub',4],['bird',3],['deer',2]])for(let i=0;i<count;i++){const model=createAnimal(kind);model.visible=false;scene.add(model);animals.push({kind,index:i,model,at:null,walking:0,perch:0});}
- function sync(){const active=activeDiscoveries(getState());for(const [id,g] of discoveries)if(!active.some(d=>d.id===id)){scene.remove(g);discoveries.delete(id);}for(const d of active)if(!discoveries.has(d.id)){const g=createDiscovery(d);g.position.set(d.x,0,d.z);scene.add(g);discoveries.set(d.id,g);}}
+ function sync(){const active=activeDiscoveries(getState());for(const [id,g] of discoveries)if(!active.some(d=>d.id===id)){scene.remove(g);discoveries.delete(id);}for(const d of active)if(!discoveries.has(d.id)){const g=createDiscovery(d);g.position.set(d.x,0,d.z);animateDiscovery(g,{found:getState().discoveries.includes(d.id)});scene.add(g);discoveries.set(d.id,g);}}
  function visitBirdhouse(a,dt,time){
   if(a.kind!=='bird'||a.index!==0)return false;
   const toys=getDelights(),p=getState().delights.filter(p=>p.kind==='birdhouse').sort((p,q)=>p.id-q.id).find(p=>toys?.claim(p.id,'bird:0'));if(!p)return false;

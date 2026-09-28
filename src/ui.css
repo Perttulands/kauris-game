@@ -99,3 +99,64 @@
  #catalogBody #pieceCards{grid-template-columns:repeat(2,minmax(0,1fr))}
  #catalog #wordCard.menuWord #wordText{font-size:36px}
 }
+
+/* Kauri's game: static authored orchard front door, separate compact pause. */
+#overlay{color:#28483d;background:#f6f0df;backdrop-filter:none;padding:28px;align-items:center;justify-content:center}
+#overlay .welcome{max-width:1224px;width:100%;margin:auto;position:relative;display:grid;grid-template-columns:minmax(330px,.82fr) minmax(0,1.18fr);grid-template-rows:auto 1fr;column-gap:42px;text-align:left}
+#overlay .landingTop{grid-column:1;grid-row:1;padding:5px 0 18px}
+#overlay .languageControl{gap:10px;margin:0;font-size:16px;color:#4b6759}
+#overlay .languageControl select{background:#fffaf0;border:1px solid #bbc6ad;border-radius:10px;padding:7px 12px;font-size:16px;min-height:42px;box-shadow:none}
+#overlay .languageStatus{max-width:370px;color:#765237;line-height:1.4}
+#overlay #landingHero{grid-column:2;grid-row:1/3;min-width:0;height:min(640px,calc(100vh - 56px));overflow:hidden;border-radius:210px 210px 28px 28px;background:#bed3b6;border:7px solid #e4e5cf;box-shadow:0 16px 38px #4c654c14}
+#overlay #landingHero img{display:block;width:100%;height:100%;object-fit:cover;object-position:51% 51%}
+#overlay .landingCopy{grid-column:1;grid-row:2;align-self:center;padding:8px 0 16px}
+#overlay #landingMaker{font-size:17px;line-height:1.4;max-width:340px;color:#77634b;margin:0 0 16px}
+#overlay #landingTitle{font:500 clamp(58px,6.8vw,90px)/.96 Georgia,'Times New Roman',serif;letter-spacing:-3px;max-width:8ch;margin:0 0 23px;color:#28483d;text-shadow:none;text-wrap:balance}
+#overlay #landingIntro{font-size:21px;line-height:1.5;max-width:330px;color:#53654e;margin:0 0 28px}
+#overlay #welcomePictures{display:none}
+#overlay #start{display:flex;align-items:center;justify-content:center;gap:14px;min-width:254px;max-width:100%;min-height:66px;padding:12px 28px;margin:0;background:#a65032;border:2px solid #873e28;color:#fff7e3;font-size:26px;font-weight:700;border-radius:14px;box-shadow:0 4px 0 #743824,0 10px 20px #944b2b1c}
+#overlay #start:hover{background:#913f29;border-color:#743422;box-shadow:0 4px 0 #683020,0 12px 22px #944b2b25}
+#overlay #start svg{width:32px;height:32px;flex-shrink:0}
+#overlay #start span{white-space:normal;overflow-wrap:normal;word-break:normal}
+#overlay #landingInputCue{display:flex;align-items:center;gap:9px;font-size:16px;line-height:1.35;color:#65745f;margin:17px 0 22px}
+#overlay #landingInputCue svg{width:37px;height:26px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round}
+#overlay .pauseMenus{margin:0 0 18px;gap:10px;flex-wrap:wrap}
+#overlay .pauseMenus button{border:1px solid #bbc6ad;background:transparent;color:#365644;font-size:17px;padding:9px 12px;box-shadow:none;gap:7px;border-radius:10px;min-height:46px}
+#overlay .pauseMenus button:hover{background:#e9ebd9;border-color:#8da084}
+#overlay .pauseMenus svg{width:25px;height:25px}
+#overlay .pauseMenus kbd{font-size:14px;color:#687960;border-color:#b8c3a8}
+#overlay #welcomeSave{display:block;color:#6c7864;font-size:16px;line-height:1.4;margin:0;max-width:365px}
+#overlay[data-mode=landing] #welcomeControls,#overlay[data-mode=landing] #pauseTitle,#overlay[data-mode=landing] #reset{display:none}
+#overlay[data-mode=pause]{background:#183b32b8;backdrop-filter:blur(8px);padding:24px}
+#overlay[data-mode=pause] .welcome{display:block;max-width:620px;background:#f6f0df;border:1px solid #e0d8bd;border-radius:26px;padding:30px 38px;box-shadow:0 20px 70px #09251e4d}
+#overlay[data-mode=pause] .landingOnly{display:none!important}
+#overlay[data-mode=pause] .landingTop{padding:0 0 22px}
+#overlay[data-mode=pause] .landingCopy{padding:0}
+#overlay[data-mode=pause] #landingTitle{font-size:43px;line-height:1.05;letter-spacing:-1px;max-width:none;margin:0 0 10px}
+#overlay[data-mode=pause] #pauseTitle{font-size:20px;font-weight:400;color:#69795f;margin:0 0 24px}
+#overlay[data-mode=pause] #start{font-size:24px;min-height:60px;margin-bottom:22px}
+#overlay[data-mode=pause] #welcomeControls{font-size:16px;line-height:1.65;color:#58694f;margin:16px 0}
+#overlay[data-mode=pause] #reset{display:block;margin:20px 0 0;padding:13px 0 0;border:0;border-top:1px solid #d8ddc7;border-radius:0;color:#795b46;font-size:16px;background:none;box-shadow:none;text-align:left;width:100%}
+@media(max-width:760px){
+ #overlay{padding:22px}
+ #overlay .welcome{max-width:620px;display:flex;flex-direction:column;gap:0}
+ #overlay .landingTop{order:0;padding:0 0 18px}
+ #overlay .languageControl{justify-content:flex-end}
+ #overlay #landingHero{order:1;height:340px;flex:none;width:100%;border-radius:150px 150px 24px 24px;border-width:6px}
+ #overlay #landingHero img{object-position:50% 54%}
+ #overlay .landingCopy{order:2;width:100%;padding:27px 8px 5px}
+ #overlay #landingMaker{font-size:17px;max-width:none;margin-bottom:13px}
+ #overlay #landingTitle{font-size:64px;max-width:none;letter-spacing:-2px;margin-bottom:17px;line-height:1}
+ #overlay #landingIntro{font-size:20px;line-height:1.45;max-width:470px;margin-bottom:23px}
+ #overlay #start{width:100%;min-height:64px;font-size:26px}
+ #overlay #landingInputCue{justify-content:center;margin:16px 0 22px}
+ #overlay .pauseMenus{justify-content:center;margin-bottom:16px}
+ #overlay #welcomeSave{max-width:none;text-align:center}
+ #overlay[data-mode=pause] .welcome{padding:26px}
+ #overlay[data-mode=pause] .languageControl{justify-content:flex-start}
+ #overlay[data-mode=pause] .landingCopy{padding:0}
+ #overlay[data-mode=pause] .pauseMenus{justify-content:flex-start}
+ #overlay[data-mode=pause] #welcomeSave{text-align:left}
+}
+@media(max-width:430px){#overlay{padding:16px}#overlay #landingHero{height:245px}#overlay #landingTitle{font-size:48px}#overlay .landingCopy{padding-top:22px}#overlay .languageControl{justify-content:flex-start}#overlay #landingMaker{font-size:16px}}
+@media(min-width:761px) and (max-height:680px){#overlay .welcome{column-gap:30px}#overlay #landingTitle{font-size:68px}#overlay #landingIntro{margin-bottom:18px;font-size:19px}#overlay #landingMaker{margin-bottom:12px}#overlay .landingTop{padding-bottom:8px}#overlay #landingInputCue{margin:13px 0 17px}}

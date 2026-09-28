@@ -24,7 +24,7 @@ def run(*cmd,cwd=source,capture=True):
 revision=run('git','rev-parse',args.revision+'^{commit}')
 output=args.output.resolve()
 if output==source or source in output.parents:raise SystemExit('Export must be a separate checkout outside source.')
-allow={'README.md','package.json','package-lock.json','index.html','scripts/publish-source.py'}
+allow={'README.md','package.json','package-lock.json','index.html','scripts/publish-source.py','scripts/package-static.mjs','HOSTING.md','hosting/Caddyfile','hosting/kauris-static.service'}
 paths=run('git','ls-tree','-r','--name-only',revision).splitlines()
 def allowed(p):
  return p in allow or (p.startswith('src/') and Path(p).suffix in ('.js','.css')) or (p.startswith('tests/') and p.endswith('.test.js')) or (p.startswith('public/assets/') and Path(p).suffix in ('.glb','.png','.jpg','.webp','.svg','.ogg','.wav','.mp3'))
@@ -45,7 +45,7 @@ for p in paths:
  data=subprocess.check_output(['git','show',revision+':'+p],cwd=source)
  if len(data)>10*1024*1024:raise SystemExit('Oversized public file: '+p)
  blobs[p]=data
-blobs['.gitignore']=b'node_modules/\ndist/\n*.log\n.env\n.env.*\n'
+blobs['.gitignore']=b'node_modules/\ndist/\nartifacts/\n*.log\n.env\n.env.*\n'
 # Content checks return paths only, never matching secret bytes.
 patterns=[rb'(?:gh[pousr]_[A-Za-z0-9]{25,}|github_pat_[A-Za-z0-9_]{40,}|AKIA[A-Z0-9]{16}|sk-[A-Za-z0-9]{30,})',rb'-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----',rb'/home/[A-Za-z0-9_.-]+/',rb'[A-Za-z0-9_.+-]+@(?:gmail|hotmail|outlook)\.com',rb'"kauris-meadow-v1"\s*:']
 def audit(name,data):

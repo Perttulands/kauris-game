@@ -360,7 +360,7 @@ export function createDiscovery(def){
 export function animateDiscovery(group,{time=0,found=false}={}){
   const rig=discoveryRigs.get(group);if(!rig)return;const t=Number.isFinite(time)?time:0;
   rig.token.position.y=.62+Math.sin(t*1.6)*.065;rig.token.rotation.y=t*.45;
-  rig.token.scale.setScalar(found?.62:1);rig.sparks.rotation.y=-t*.18;rig.sparks.visible=!found;
+  rig.token.visible=!found;rig.sparks.rotation.y=-t*.18;rig.sparks.visible=!found;
 }
 
 const animalRigs=new WeakMap(),animalTemplates=new Map();

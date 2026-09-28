@@ -1,0 +1,19 @@
+# User-service template. Adapt paths and install under the user service manager.
+[Unit]
+Description=Kauri's game static files
+After=network.target
+
+[Service]
+Type=simple
+Environment=KAURI_PORT=4180
+Environment=KAURI_STATIC_ROOT=%h/.local/share/kauris-host/current/site
+Environment=KAURI_CACHE_CONFIG=%h/.local/share/kauris-host/current/cache.caddy
+ExecStart=%h/.local/bin/caddy run --config %h/.config/kauris-host/Caddyfile --adapter caddyfile
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+UMask=0027
+
+[Install]
+WantedBy=default.target
