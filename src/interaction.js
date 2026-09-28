@@ -21,3 +21,9 @@ export function advanceChop(c,key,dt,seconds=1.8){
  const complete=c.elapsed+1e-8>=seconds;c.done=complete;
  return {progress:Math.min(1,c.elapsed/seconds),impact,complete};
 }
+
+// Bare ground has no fixed destination: walking preserves a shallow ray's distance.
+export function farTargetHint(target,plots,eyeY){
+ if(!target?.outOfReach)return null;
+ return Math.abs(eyeY-target.point?.y)<=6&&target.ground&&!target.wildId&&!target.buildId&&!target.propId&&!target.plot&&!plots[`${target.gx},${target.gz}`]?'target.lookDown':'target.closer';
+}

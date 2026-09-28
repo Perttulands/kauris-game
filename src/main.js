@@ -1,9 +1,9 @@
 import * as THREE from 'three';
 import {createWorld,createTree,animateTree,createBuildPiece,createTool} from './visuals.js';
-import {SAVE_KEY,SEEDS,PIECES,MATERIALS,cellKey,freshState,dig,plant,fill,water,tick,harvest,validateBuild,build,remove,serialize,deserialize} from './state.js';
+import {SAVE_KEY,SEEDS,PIECES,MATERIALS,cellKey,freshState,dig,plant,fill,water,tick,harvest,validateBuild,build,validateRemove,remove,serialize,deserialize} from './state.js';
 import {WILD_RESOURCES,PLACES} from './world-data.js';
 import {liveWild,activeObstacles,harvestWild,worldBlocked} from './state.js';
-import {advanceChop,wheelStep} from './interaction.js';
+import {advanceChop,wheelStep,farTargetHint} from './interaction.js';
 import {createPictures} from './previews.js';
 import {icon} from './icons.js';
 import {findHomes,houseReadiness} from './residents.js';
@@ -19,7 +19,7 @@ import {createOceanWorld,createReefCover} from './ocean-visuals.js';
 import {createMarineAnimal,animateMarineAnimal,MARINE_PROFILES} from './marine-visuals.js';
 import {createWhaleSystem} from './whale.js';
 import {createMarineLife} from './marine.js';
-import {DELIGHTS,DELIGHT_KEYS,propBoxes,propFloor,propSupport,propAnchor,rotateXZ,placeDelight,removeDelight,validateDelight,boxesOverlap,liftRiders} from './delights.js';
+import {DELIGHTS,DELIGHT_KEYS,propBoxes,propFloor,propSupport,propAnchor,rotateXZ,placeDelight,validateRemoveDelight,removeDelight,validateDelight,boxesOverlap,liftRiders} from './delights.js';
 import {createDelightSystem} from './delight-runtime.js';
 import {createDelight} from './delight-visuals.js';
 import {animateCraftPiece} from './craft-visuals.js';
@@ -27,6 +27,7 @@ import {createMeadowCover,animateMeadowCover} from './meadow-visuals.js';
 import {createI18n,LANGUAGES} from './i18n.js';
 import {nearestReading,createReadingFocus,assistedReading} from './reading.js';
 import {flowerEnvelope,flowerTarget} from './flower-targeting.js';
+import {plotSurfaces} from './plot-surfaces.js';
 import './ui.css';
 const $=id=>document.getElementById(id), canvas=$('game');
 let localeStorage;try{localeStorage=localStorage;}catch{}
@@ -134,7 +135,7 @@ const chop={},wheel={};let chopProgress=0,totalImpacts=0,rewardUntil=0,failureUn
 function resetActions(){held=false;advanceChop(chop,null,0);chopProgress=0;wheelStep(wheel,0,0,0,false);}
 let lastReward=null,lastToast=null,saveStatusKey='ui.saved';
 function toast(code,params={}){lastToast=typeof code==='object'?code:{code,params};$('toast').textContent=i18n.message(lastToast);toastUntil=elapsed+3;$('toast').classList.add('show');}
-function saveStatus(key){saveStatusKey=key;$('saveStatus').textContent=t(key);}
+function saveStatus(key){saveStatusKey=key;$('saveStatus').textContent=t(key);$('saveStatus').dataset.warning=String(['ui.saveUnavailable','ui.loadFailed'].includes(key));}
 function save(){
  if(!dirty)return;
  state.player={x:pos.x,y:feet,z:pos.z,yaw,pitch};
@@ -153,17 +154,13 @@ function sync(){
  for(const [k,g] of plantMeshes)if(!state.plots[k]?.seed){scene.remove(g);plantMeshes.delete(k);}
  plotsGroup.clear();
  for(const [k,p] of Object.entries(state.plots)){
-  if(p.phase==='hole')for(const [dx,dz,turn] of [[0,1,0],[0,-1,0],[1,0,1],[-1,0,1]]){
-   if(state.plots[cellKey(p.gx+dx,p.gz+dz)]?.phase==='hole')continue;
-   const wall=new THREE.Mesh(holeWallGeometry,dirtMaterial);wall.position.set(p.gx*2+dx,-.3,p.gz*2+dz);wall.rotation.y=turn*Math.PI/2;wall.receiveShadow=true;plotsGroup.add(wall);
-  }
-  const soil=new THREE.Mesh(plotGeometry,plotMaterial);soil.position.set(p.gx*2,p.phase==='hole'?-.59:.012,p.gz*2);soil.receiveShadow=true;plotsGroup.add(soil);
+  plotsGroup.add(...plotSurfaces(p,state.plots,{wallGeometry:holeWallGeometry,wallMaterial:dirtMaterial,soilGeometry:plotGeometry,soilMaterial:plotMaterial}));
   if(p.seed&&!plantMeshes.has(k)){const tree=createTree(p.seed,{variation:p.variation??0});tree.userData.perchHeight=new THREE.Box3().setFromObject(tree).max.y-.15;tree.position.set(p.gx*2,p.phase==='hole'?-.5:0,p.gz*2);tree.userData.plot=k;tree.traverse(o=>{if(o.isMesh)o.userData.plot=k;});scene.add(tree);plantMeshes.set(k,tree);}
   const tree=plantMeshes.get(k);if(tree)tree.position.y=p.phase==='hole'?-.5:0;
  }
  for(const [id,g] of buildMeshes)if(!state.buildings.some(b=>b.id===id)){scene.remove(g);buildMeshes.delete(id);}
  for(const b of state.buildings)if(!buildMeshes.has(b.id)){const g=createBuildPiece(b.kind,b.material);g.position.set(b.gx*2,baseOf(b)+b.level*2.4,b.gz*2);g.rotation.y=b.rotation*Math.PI/2;g.traverse(o=>{if(o.isMesh)o.userData.buildId=b.id;});scene.add(g);buildMeshes.set(b.id,g);}
- interactive=[ground,seabed,...plantMeshes.values(),...wildMeshes.values(),...buildMeshes.values(),...delights.models.values()];updateHUD();
+ interactive=[ground,seabed,plotsGroup,...plantMeshes.values(),...wildMeshes.values(),...buildMeshes.values(),...delights.models.values()];updateHUD();
 }
 function selectedBuild(){
  if(!target)return null;
@@ -205,11 +202,11 @@ function browse(delta){if(tool===1||tool===5)cycle(delta);else chooseTool((tool+
 function updateHUD(){
  $('hud').classList.toggle('building',tool===5||tool===6);
  $('resources').innerHTML=Object.entries(state.inventory).map(([k,v])=>`<div class="resource" tabindex="0" data-word="material.${k}" data-icon="${k}" title="${t('material.'+k)}" aria-label="${t('ui.inventoryCount',{material:t('material.'+k),count:v})}">${icon(k)}<span>${t('material.'+k)}</span><b>${v}</b></div>`).join('');
- $('toolbar').innerHTML=tools.map((item,i)=>`<button class="${i===tool?'active':''}" data-tool="${i}" data-word="tool.${item.key}" data-picture="tool:${item.key}" aria-label="${t('action.'+item.key)}" aria-pressed="${i===tool}"><small>${i+1}</small><span class="toolPic">${['seed','fill','build','remove'].includes(item.key)?icon(item.key):picture('tool:'+item.key,t('tool.'+item.key))}</span>${t('action.'+item.key)}</button>`).join('');
+ $('toolbar').innerHTML=tools.map((item,i)=>`<button class="${i===tool?'active':''}" data-tool="${i}" data-word="tool.${item.key}" ${item.key==='fill'?'data-icon="fill"':`data-picture="tool:${item.key}"`} aria-label="${t('action.'+item.key)}" aria-pressed="${i===tool}"><small>${i+1}</small><span class="toolPic">${['seed','fill','build','remove'].includes(item.key)?icon(item.key):picture('tool:'+item.key,t('tool.'+item.key))}</span>${t('action.'+item.key)}</button>`).join('');
  $('toolbar').querySelectorAll('button').forEach(b=>b.onclick=()=>chooseTool(Number(b.dataset.tool)));
  const seed=seedKeys[seedIndex],part=pieceKeys[pieceIndex],material=isToy()?DELIGHTS[part].material:MATERIALS[materialIndex];
  $('selectedName').textContent=tool===1?t('ui.seedChoice',{noun:t('tree.'+seed)}):tool===5?(isToy()?t('prop.'+part):t('ui.pieceChoice',{piece:t('piece.'+part),material:t('material.'+material)})):t('tool.'+tools[tool].key);
- $('selectedPicture').innerHTML=picture(tool===1?'seed:'+seed:tool===5?(isToy()?'prop:'+part:`piece:${part}:${material}`):'tool:'+tools[tool].key,$('selectedName').textContent);
+ $('selectedPicture').innerHTML=tool===2?icon('fill'):picture(tool===1?'seed:'+seed:tool===5?(isToy()?'prop:'+part:`piece:${part}:${material}`):'tool:'+tools[tool].key,$('selectedName').textContent);
  $('selectedDetail').textContent=tool===1?t('ui.chooseSeed'):tool===5?t('ui.buildCost',{count:(DELIGHTS[part]??PIECES[part]).cost,material:t('material.'+material),level}):t(tool===4?'ui.holdChop':tool===3?'ui.holdWater':'ui.clickUse');
  $('buildActions').hidden=tool!==5;
  if(tool===5){$('buildActions').innerHTML=`<button id="changeMaterial" aria-label="${t('aria.changeMaterial')}">${icon(material)}</button><button id="rotatePiece" aria-label="${t('aria.rotate')}">${icon('rotate')}</button><button id="lowerPiece" aria-label="${t('aria.lower')}">−</button><button id="raisePiece" aria-label="${t('aria.raise')}">+</button>`;$('changeMaterial').hidden=isToy();$('lowerPiece').hidden=isToy();$('raisePiece').hidden=isToy();$('changeMaterial').onclick=()=>{materialIndex=(materialIndex+1)%MATERIALS.length;chooseTool(5);};$('rotatePiece').onclick=rotateChoice;$('lowerPiece').onclick=()=>{level=Math.max(0,level-1);updateHUD();};$('raisePiece').onclick=()=>{level=Math.min(3,level+1);updateHUD();};}
@@ -223,12 +220,14 @@ function setupPictures(){
  for(const [id,name,key] of [['menuButton','build','Tab'],['journalButton','book','J'],['pauseBuild','build','Tab'],['pauseJournal','book','J'],['buildTab','build','Tab'],['journalTab','book','J']]){
   const label=t(name==='build'?'ui.buildMenu':'ui.journalMenu');$(id).innerHTML=icon(name)+`<span>${label}</span><kbd>${key}</kbd>`;$(id).setAttribute('aria-label',label);
  }
- $('closeCatalog').innerHTML=icon('play')+'<span>'+t('ui.resume')+'</span>';$('closeCatalog').setAttribute('aria-label',t('ui.resume'));refreshPause();
+ refreshPause();
  $('welcomePictures').innerHTML=icon('seed')+icon('grow')+picture('seed:oak',t('tree.oak'))+icon('build')+picture('piece:roof:wood',t('aria.buildHouse'));
  $('loopGuide').innerHTML=steps.map(([name],i)=>`<button data-step="${i}" aria-label="${t('action.'+name)}" title="${t('action.'+name)}">${icon(name)}</button>`).join('');
  $('loopGuide').querySelectorAll('button').forEach(b=>b.onclick=()=>{const index=steps[Number(b.dataset.step)][1];if(index!==null)chooseTool(index);});
  $('catalogLoop').innerHTML=steps.map(([name],i)=>(i?'→':'')+`<span>${icon(name)}${t('action.'+name)}</span>`).join('');
  $('previousChoice').onclick=()=>browse(-1);$('nextChoice').onclick=()=>browse(1);
+ $('showPieces').innerHTML=icon('build')+`<span>${t('ui.buildHeading')}</span>`;$('showObjects').innerHTML=picture('prop:birdhouse',t('ui.toysHeading'))+`<span>${t('ui.toysHeading')}</span>`;
+ $('showPieces').onclick=()=>jumpBuildSection('piecesHeading');$('showObjects').onclick=()=>jumpBuildSection('objectsHeading');
 }
 function updateJournal(){
  let title='journal.start',detail='journal.loop',params={};
@@ -241,10 +240,10 @@ function updateJournal(){
  const stage=contextStage();$('loopGuide').querySelectorAll('button').forEach((b,i)=>{b.classList.toggle('current',i===stage);b.classList.toggle('next',i===stage+1);});
  $('objective').textContent=t(title);$('journalText').textContent=t(detail,params);
 }
-function refreshPause(){$('overlay').dataset.mode=started?'pause':'landing';const key=started?'ui.resume':hasSavedWorld?'ui.continue':'ui.play';$('start').innerHTML=icon('play')+'<span>'+t(key)+'</span>';$('start').setAttribute('aria-label',t(key));$('pauseTitle').textContent=started||hasSavedWorld?t('ui.paused'):'';}
+function refreshPause(){$('overlay').dataset.mode=started?'pause':'landing';const key=started?'ui.resume':hasSavedWorld?'ui.continue':'ui.play';$('start').innerHTML=icon('play')+'<span>'+t(key)+'</span>';$('start').setAttribute('aria-label',t(key));$('pauseTitle').textContent=started||hasSavedWorld?t('ui.paused'):'';$('closeCatalog').innerHTML=icon('play')+'<span>'+t(key)+'</span>';$('closeCatalog').setAttribute('aria-label',t(key));}
 function showCatalog(show=true,mode=menuMode){
  clearReading();if(show){audio.pause();clearEffects();}resetActions();$('wardrobe').hidden=true;outfitResident=null;catalogOpen=show;$('catalog').hidden=!show;held=false;keys.clear();
- if(show){menuMode=mode;locked=false;document.exitPointerLock?.();$('overlay').hidden=true;renderCatalog();$('catalogBody').scrollTop=0;(mode==='journal'?$('bookLanguage'):$('materialCards').querySelector('.chosen')).focus({preventScroll:true});}
+ if(show){refreshPause();menuMode=mode;locked=false;document.exitPointerLock?.();$('overlay').hidden=true;renderCatalog();$('catalogBody').scrollTop=0;(mode==='journal'?$('bookLanguage'):$('materialCards').querySelector('.chosen')).focus({preventScroll:true});}
  else requestLock();
 }
 // Keep the actual focused/hovered buttons, even when their localized contents change.
@@ -257,17 +256,32 @@ function reconcileCards(id,html){
   if(current.innerHTML!==next.innerHTML)current.innerHTML=next.innerHTML;
  }
 }
+function buildAvailability(material,cost){
+ const have=state.inventory[material]??0,missing=Math.max(0,cost-have);
+ return {have,missing,ready:missing===0,text:missing?t('ui.missingCount',{count:missing,material:t('material.'+material)}):t('ui.readyToBuild')};
+}
+function cardCost(material,cost,availability){
+ return `<small class="cardCost">${icon(material)} ${cost} <span class="ownedCount">${t('ui.haveCount',{count:availability.have})}</span></small><span class="cardStatus">${icon(availability.ready?'check':'lock')}${availability.text}</span>`;
+}
+function updateCatalogScroll(){
+ const body=$('catalogBody');$('catalog').dataset.scrollable=String(body.scrollHeight>body.clientHeight+2&&body.scrollTop+body.clientHeight<body.scrollHeight-3);
+}
+function jumpBuildSection(id){
+ const body=$('catalogBody'),heading=$(id);body.scrollTop+=heading.getBoundingClientRect().top-body.getBoundingClientRect().top;updateCatalogScroll();
+}
 function renderCatalog(){
  $('buildChoices').hidden=menuMode!=='build';$('journalChoices').hidden=menuMode!=='journal';
  $('buildTab').setAttribute('aria-pressed',String(menuMode==='build'));$('journalTab').setAttribute('aria-pressed',String(menuMode==='journal'));
- reconcileCards('seedCards',seedKeys.map((k,i)=>{const spec=SEEDS[k],unlocked=seedUnlocked(state,k),noun=t('tree.'+k);return `<button aria-disabled="${!unlocked}" class="card ${unlocked?'':'seedLocked'} ${i===seedIndex?'chosen':''}" data-seed="${i}" data-word="tree.${k}" data-picture="seed:${k}" aria-label="${t('ui.plantChoice',{noun})}${unlocked?'':'. '+t('ui.lockedSeed')}" aria-pressed="${i===seedIndex}">${picture('seed:'+k,t('ui.maturePicture',{noun}))}${unlocked?'':`<span class="chosenMark">${icon('lock')}</span>`}${i===seedIndex?`<span class="chosenMark">${icon('check')}</span>`:''}<b>${noun}</b><small>${icon(spec.resource)} +${spec.yield}</small></button>`;}).join(''));
- reconcileCards('pieceCards',Object.keys(PIECES).map((k,i)=>`<button class="card ${i===pieceIndex?'chosen':''}" data-piece="${i}" data-word="piece.${k}" data-picture="piece:${k}:${MATERIALS[materialIndex]}" aria-label="${t('ui.buildChoice',{piece:t('piece.'+k)})}">${picture(`piece:${k}:${MATERIALS[materialIndex]}`,t('piece.'+k))}<b>${t('piece.'+k)}</b><small>${icon(MATERIALS[materialIndex])} ${PIECES[k].cost}</small></button>`).join(''));
- reconcileCards('toyCards',DELIGHT_KEYS.map(k=>{const d=DELIGHTS[k];return `<button class="card ${pieceKeys[pieceIndex]===k?'chosen':''}" data-toy="${k}" data-word="prop.${k}" data-picture="prop:${k}" aria-label="${t('prop.'+k)}">${picture('prop:'+k,t('prop.'+k))}<b>${t('prop.'+k)}</b><small>${icon(d.material)} ${d.cost}</small></button>`;}).join(''));
- $('toyCards').querySelectorAll('button').forEach(b=>b.onclick=()=>{pieceIndex=pieceKeys.indexOf(b.dataset.toy);level=0;chooseTool(5);showCatalog(false);});
+ $('catalogInventory').innerHTML=`<strong>${t('ui.stockHeading')}</strong>`+MATERIALS.map(m=>`<span class="menuResource" data-word="material.${m}" data-icon="${m}" aria-label="${t('ui.inventoryCount',{material:t('material.'+m),count:state.inventory[m]??0})}">${icon(m)}<b>${state.inventory[m]??0}</b></span>`).join('');
+ reconcileCards('seedCards',seedKeys.map((k,i)=>{const spec=SEEDS[k],unlocked=seedUnlocked(state,k),noun=t('tree.'+k);return `<button aria-disabled="${!unlocked}" class="card ${unlocked?'':'seedLocked'} ${i===seedIndex?'chosen':''}" data-seed="${i}" data-word="tree.${k}" data-picture="seed:${k}" aria-label="${t('ui.plantChoice',{noun})}${unlocked?'':'. '+t('ui.lockedSeed')}" aria-pressed="${i===seedIndex}">${picture('seed:'+k,t('ui.maturePicture',{noun}))}${unlocked?'':`<span class="chosenMark">${icon('lock')}</span>`}${i===seedIndex?`<span class="chosenMark">${icon('check')}</span>`:''}<b>${noun}</b><small>${icon(spec.resource)} +${spec.yield}</small><span class="cardStatus">${unlocked?'':icon('footsteps')+t('ui.lockedSeed')}</span></button>`;}).join(''));
+ reconcileCards('pieceCards',Object.keys(PIECES).map((k,i)=>{const material=MATERIALS[materialIndex],a=buildAvailability(material,PIECES[k].cost);return `<button class="card ${i===pieceIndex?'chosen':''}" data-affordable="${a.ready}" aria-disabled="${!a.ready}" data-piece="${i}" data-word="piece.${k}" data-picture="piece:${k}:${material}" aria-label="${t('ui.buildChoice',{piece:t('piece.'+k)})}. ${a.text}">${picture(`piece:${k}:${material}`,t('piece.'+k))}<b>${t('piece.'+k)}</b>${cardCost(material,PIECES[k].cost,a)}</button>`;}).join(''));
+ reconcileCards('toyCards',DELIGHT_KEYS.map(k=>{const d=DELIGHTS[k],a=buildAvailability(d.material,d.cost);return `<button class="card ${pieceKeys[pieceIndex]===k?'chosen':''}" data-affordable="${a.ready}" aria-disabled="${!a.ready}" data-toy="${k}" data-word="prop.${k}" data-picture="prop:${k}" aria-label="${t('prop.'+k)}. ${a.text}">${picture('prop:'+k,t('prop.'+k))}<b>${t('prop.'+k)}</b>${cardCost(d.material,d.cost,a)}</button>`;}).join(''));
+ $('toyCards').querySelectorAll('button').forEach(b=>b.onclick=()=>{const d=DELIGHTS[b.dataset.toy];if(!buildAvailability(d.material,d.cost).ready)return;pieceIndex=pieceKeys.indexOf(b.dataset.toy);level=0;chooseTool(5);showCatalog(false);});
  reconcileCards('materialCards',MATERIALS.map((m,i)=>`<button data-material="${i}" data-word="material.${m}" data-picture="piece:wall:${m}" class="${i===materialIndex?'chosen':''}" aria-label="${t('ui.materialChoice',{material:t('material.'+m)})}" aria-pressed="${i===materialIndex}">${picture('piece:wall:'+m,t('material.'+m))}${t('material.'+m)}</button>`).join(''));
  $('seedCards').querySelectorAll('button').forEach(b=>b.onclick=()=>{if(!seedUnlocked(state,seedKeys[Number(b.dataset.seed)]))return;seedIndex=Number(b.dataset.seed);chooseTool(1);showCatalog(false);});
- $('pieceCards').querySelectorAll('button').forEach(b=>b.onclick=()=>{pieceIndex=Number(b.dataset.piece);level=pieceKeys[pieceIndex]==='roof'?1:0;chooseTool(5);showCatalog(false);});
+ $('pieceCards').querySelectorAll('button').forEach(b=>b.onclick=()=>{const k=Object.keys(PIECES)[Number(b.dataset.piece)];if(!buildAvailability(MATERIALS[materialIndex],PIECES[k].cost).ready)return;pieceIndex=Number(b.dataset.piece);level=k==='roof'?1:0;chooseTool(5);showCatalog(false);});
  $('materialCards').querySelectorAll('button').forEach(b=>b.onclick=()=>{materialIndex=Number(b.dataset.material);chooseTool(5);renderCatalog();menuReading=currentReading=semanticElement(b);renderReading();});
+ requestAnimationFrame(updateCatalogScroll);
 }
 function setupLivingUI(){
  const mute=$('muteButton');const refresh=()=>{mute.innerHTML=icon(audio.muted?'mute':'sound');mute.setAttribute('aria-label',t(audio.muted?'aria.unmute':'aria.mute'));mute.setAttribute('aria-pressed',String(audio.muted));};refresh();mute.onclick=()=>{audio.toggle();refresh();};
@@ -278,8 +292,8 @@ function openWardrobe(id){
  clearReading();
  const r=state.residents.find(r=>r.id===id);if(!r)return;
  resetActions();audio.pause();clearEffects();locked=false;catalogOpen=true;keys.clear();outfitResident=id;$('catalog').hidden=true;$('overlay').hidden=true;$('wardrobe').hidden=false;document.exitPointerLock?.();
- $('outfitCards').innerHTML=[0,1,2,3].map(o=>`<button class="outfitCard ${o===(r.outfit??0)?'chosen':''}" data-outfit="${o}" data-word="noun.clothes" data-picture="${r.habitat==='ocean'?'diver':'resident'}:${r.variant}:${o}" aria-label="${t('ui.outfit',{number:o+1})}" aria-pressed="${o===(r.outfit??0)}">${picture(`${r.habitat==='ocean'?'diver':'resident'}:${r.variant}:${o}`,t('ui.outfit',{number:o+1}))}${icon(o===(r.outfit??0)?'check':'shirt')}</button>`).join('');
- $('outfitCards').querySelectorAll('button').forEach(b=>b.onclick=()=>{audio.start();if(setOutfit(state,id,Number(b.dataset.outfit)).ok){dirty=true;residents.sync();save();audio.play('cloth');openWardrobe(id);}});
+ reconcileCards('outfitCards',[0,1,2,3].map(o=>`<button class="outfitCard ${o===(r.outfit??0)?'chosen':''}" data-outfit="${o}" data-word="noun.clothes" data-picture="${r.habitat==='ocean'?'diver':'resident'}:${r.variant}:${o}" aria-label="${t('ui.outfit',{number:o+1})}" aria-pressed="${o===(r.outfit??0)}">${picture(`${r.habitat==='ocean'?'diver':'resident'}:${r.variant}:${o}`,t('ui.outfit',{number:o+1}))}${icon(o===(r.outfit??0)?'check':'shirt')}</button>`).join(''));
+ $('outfitCards').querySelectorAll('button').forEach(b=>b.onclick=()=>{audio.start();if(setOutfit(state,id,Number(b.dataset.outfit)).ok){dirty=true;residents.sync();save();audio.play('cloth');openWardrobe(id);menuReading=currentReading=semanticElement(b);renderReading();}});
 }
 function updateFriendButton(){
  nearestFriend=(state.residents??[]).filter(r=>r.x!==null&&Math.hypot(r.x-pos.x,residentFloor(r.x,r.z,r.baseY??0)-feet,r.z-pos.z)<4.5).find(r=>{const point=new THREE.Vector3(r.x,residentFloor(r.x,r.z,r.baseY??0)+1,r.z),p=point.clone().project(camera);if(!(p.z>=-1&&p.z<=1&&Math.abs(p.x)<.9&&Math.abs(p.y)<.9))return false;const direction=point.clone().sub(camera.position),ray=new THREE.Raycaster(camera.position,direction.clone().normalize(),0,direction.length());return ray.intersectObjects([...buildMeshes.values()],true).length===0;});
@@ -313,7 +327,7 @@ document.addEventListener('keydown',e=>{
  if(e.code==='Tab'||e.code==='KeyJ'){e.preventDefault();showCatalog(true,e.code==='Tab'?'build':'journal');return;}
  if(!locked)return;keys.add(e.code);if(e.repeat)return;
  if(/^Digit[1-7]$/.test(e.code)){chooseTool(Number(e.code.at(-1))-1);return;}
- if(e.code==='KeyE')cycle(1);if(e.code==='KeyQ')cycle(-1);
+ if(e.code==='KeyE')browse(1);if(e.code==='KeyQ')browse(-1);
  if(e.code==='KeyR'&&tool===5){rotateChoice();}
  if(e.code==='KeyM'&&tool===5){materialIndex=(materialIndex+1)%MATERIALS.length;chooseTool(5);}
  if(['KeyZ','KeyX'].includes(e.code)&&tool===5){level=Math.max(0,Math.min(3,level+(e.code==='KeyX'?1:-1)));updateHUD();}
@@ -338,8 +352,8 @@ function pick(){
   else if(data.buildId){const b=state.buildings.find(b=>b.id===data.buildId);if(b){let gx=b.gx,gz=b.gz;
    if(wallLike(b)){const interiors=adjacentCells(b),floor=interiors.find(c=>state.buildings.some(f=>f.kind==='floor'&&f.gx===c.gx&&f.gz===c.gz&&baseOf(f)===baseOf(b)));if(floor){gx=floor.gx;gz=floor.gz;}}
    target={gx,gz,buildId:b.id,point:hit.point,baseY:baseOf(b)};}}
-  else if(data.seabed)target={gx:Math.round(hit.point.x/2),gz:Math.round(hit.point.z/2),point:hit.point,baseY:buildBase(Math.round(hit.point.x/2),Math.round(hit.point.z/2))??terrainHeight(hit.point.x,hit.point.z)};
-  else if(hit.instanceId!==undefined){target={...groundCells[hit.instanceId],point:hit.point,baseY:0};}
+  else if(data.seabed)target={ground:true,gx:Math.round(hit.point.x/2),gz:Math.round(hit.point.z/2),point:hit.point,baseY:buildBase(Math.round(hit.point.x/2),Math.round(hit.point.z/2))??terrainHeight(hit.point.x,hit.point.z)};
+  else if(hit.instanceId!==undefined){target={...groundCells[hit.instanceId],ground:true,point:hit.point,baseY:0};}
  }
  if(tool===4&&!target?.wildId&&!target?.plot&&!target?.buildId&&!target?.propId){
   const flower=flowerTarget(raycaster.ray,flowerEnvelopes.values(),[...interactive,world.group,ocean,...garden.discoveries.values()]);
@@ -349,26 +363,27 @@ function pick(){
  tileOutline.visible=!!target&&locked&&!target.outOfReach;if(target)tileOutline.position.set(target.gx*2,(target.baseY??0)+.035,target.gz*2);
  if(preview){preview.visible=!!target&&locked&&!target.outOfReach;if(target){const b=selectedBuild();preview.position.set(b.gx*2,(isToy()?b.baseY:baseOf(b)+b.level*2.4),b.gz*2);preview.rotation.y=b.rotation*Math.PI/2;const valid=placementResult(b).ok;preview.traverse(o=>{if(o.isMesh)o.material.color.set(valid?'#d8f5a5':'#f49471');});}}
  if(connectionGhost){connectionGhost.visible=!!target&&locked&&!target.outOfReach;if(target){const b=selectedBuild(),[dx,dz]=rotateXZ(2,0,b.rotation);connectionGhost.position.set(b.gx*2+dx,b.baseY,b.gz*2+dz);connectionGhost.rotation.y=b.rotation*Math.PI/2;}}
+ const removalCheck=tool===6?removalResult():null;
  let label='';if(target&&locked){const p=state.plots[cellKey(target.gx,target.gz)];
-  if(target.outOfReach)label=t('target.closer');
+  if(target.outOfReach)label=t(farTargetHint(target,state.plots,camera.position.y));
   else if(target.wildId){const r=WILD_RESOURCES.find(r=>r.id===target.wildId);label=tool===4?t(isFlower(r.kind)?'target.gatherFlowers':'target.chop'):t('target.wild',{noun:t('tree.'+r.kind)});}
   else
   if(tool===5){const v=placementResult(selectedBuild());label=v.ok?'':i18n.message(v);}
-  else if(tool===6)label=t(target.buildId||target.propId?'target.remove':'target.building');
+  else if(tool===6)label=removalCheck.ok?t('target.remove'):i18n.message(removalCheck);
   else if(target.propId){const q=state.delights.find(p=>p.id===target.propId);label=toyHint(q);}
   else if(p?.seed)label=t('tree.'+p.seed)+' · '+(p.phase==='hole'?t('target.seed'):p.growth>=1?t('target.ready'):t('target.progress',{growth:Math.floor(p.growth*100),water:Math.round(p.water*100)}))+(p.phase==='filled'&&p.growth<1?'\n'+t(p.water<.2?'target.needsWater':'target.growing'):'');
   else label=p?.phase==='hole'?t('target.hole'):tool===0?t('target.dig'):tool===1?t('target.digFirst'):'';
- }$('targetLabel').textContent=label;updateTargetCue();
+ }$('targetLabel').textContent=label;updateTargetCue(removalCheck);
 }
-function updateTargetCue(){
+function updateTargetCue(removalCheck){
  const p=target&&state.plots[cellKey(target.gx,target.gz)],r=target?.wildId&&WILD_RESOURCES.find(r=>r.id===target.wildId);
  let stage=r?5:stageFor(p),name=steps[stage][0],required=steps[stage][1],progress=stage===4?(p?.growth??0)*100:0,wrong=false,blocked=false;
  if(tool===5){name='build';required=5;blocked=target&&!placementResult(selectedBuild()).ok;}
- else if(tool===6){name='remove';required=6;blocked=!target?.buildId&&!target?.propId;}
+ else if(tool===6){name='remove';required=6;blocked=!removalCheck.ok;}
  else if(tool===0&&target&&!target.wildId)blocked=worldBlocked(state,target.gx,target.gz);
  if(stage===5){name=isFlower(r?.kind)||isFlower(p?.seed)?'hand':'axe';if(chopProgress)progress=chopProgress*100;}
  if(tool===3&&p?.seed&&p.phase==='filled'&&p.growth<1){name='hose';required=3;progress=p.water*100;}
- if(target?.outOfReach){name='footsteps';required=null;}
+ if(target?.outOfReach){name=farTargetHint(target,state.plots,camera.position.y)==='target.lookDown'?'lookDown':'footsteps';required=null;}
  wrong=required!==null&&required!==tool;
  const html=target&&locked?`${blocked||elapsed<failureUntil?icon('lock'):''}${wrong?`<span class="cueArrow">→</span>`:''}<span class="progressRing" style="--progress:${progress}">${icon(name)}</span>${!wrong&&!target.outOfReach&&[3,4].includes(tool)?icon('hand'):''}`:'';
  if(html!==lastCue){$('targetCue').innerHTML=html;lastCue=html;}
@@ -413,19 +428,21 @@ function toyHint(p){const q=delights.motion.get(p.id);if(p.kind==='gutter')retur
 function updateToyButton(){const p=target?.propId&&state.delights.find(p=>p.id===target.propId),show=locked&&tool<5&&!!p&&!target.outOfReach;$('useButton').hidden=!show;$('hud').classList.toggle('usingToy',show);if(!show)return;tileOutline.visible=false;const pouring=p.kind==='gutter',key=p.kind+':'+i18n.language;if($('useButton').dataset.content===key)return;$('useButton').dataset.content=key;$('useButton').innerHTML=picture('prop:'+p.kind,t('prop.'+p.kind))+icon(pouring?'hose':'hand');$('useButton').setAttribute('aria-label',pouring?t('ui.toyPour'):t('ui.toyUse',{noun:t('prop.'+p.kind)}));}
 $('useButton').onmousedown=e=>{e.preventDefault();e.stopPropagation();audio.start();const p=state.delights.find(p=>p.id===target?.propId);if(p?.kind==='gutter'&&!target.outOfReach){if(tool!==3)chooseTool(3);held=true;}};
 $('useButton').onclick=e=>{e.stopPropagation();const p=state.delights.find(p=>p.id===target?.propId);if(!p||target.outOfReach)return;if(p.kind==='gutter'){if(tool!==3)chooseTool(3);}else delights.use(p.id);};
+function removalOptions(p){return {occupied:p?.kind==='lift'&&liftRiders(p,liftBodies()).length>0};}
+function removalResult(){const p=state.delights.find(p=>p.id===target?.propId);return p?validateRemoveDelight(state,p.id,removalOptions(p)):validateRemove(state,target?.buildId);}
 function act(){
  if(tool<5&&target?.propId&&!target.outOfReach){if(state.delights.find(p=>p.id===target.propId)?.kind==='gutter'){if(tool!==3)chooseTool(3);return;}delights.use(target.propId);dirty=true;save();return;}
- if(!target||target.outOfReach){toast('message.closer');failureUntil=elapsed+.8;return;}
+ if(!target||target.outOfReach){toast(target?farTargetHint(target,state.plots,camera.position.y):'target.aim');failureUntil=elapsed+.8;return;}
  if(target.wildId){toast('message.axeWild');failureUntil=elapsed+.8;return;}
  const {gx,gz}=target,removedProp=state.delights.find(p=>p.id===target.propId),removedMaterial=removedProp?DELIGHTS[removedProp.kind].material:state.buildings.find(b=>b.id===target.buildId)?.material;let result;
  if(tool===0)result=dig(state,gx,gz);if(tool===1)result=plant(state,gx,gz,seedKeys[seedIndex]);if(tool===2)result=fill(state,gx,gz);
  if(tool===5){const b=selectedBuild();const check=placementResult(b);result=check.ok?(isToy()?placeDelight(state,b):build(state,b)):check;}
- if(tool===6){const p=state.delights.find(p=>p.id===target.propId);result=p?removeDelight(state,p.id,{occupied:p.kind==='lift'&&liftRiders(p,liftBodies()).length>0}):remove(state,target.buildId);}
+ if(tool===6){const p=state.delights.find(p=>p.id===target.propId);result=p?removeDelight(state,p.id,removalOptions(p)):remove(state,target.buildId);}
  if(result){if(!result.ok)failureUntil=elapsed+.8;toast(result);if(result.ok){dirty=true;swing=.25;audio.play(['dig','plant','fill','water','harvest','build','remove'][tool],{material:tool===5?(isToy()?DELIGHTS[pieceKeys[pieceIndex]].material:MATERIALS[materialIndex]):tool===6?removedMaterial:undefined,x:gx*2,y:target.baseY??0,z:gz*2});burst(gx,gz,undefined,target.baseY??0);sync();save();}}
 }
-function layoutContextActions(){const host=$(innerWidth<=760?'actionReadRow':'contextActions'),button=$('useButton');if(button.parentElement!==host)host.prepend(button);}
+function layoutContextActions(){const host=$('actionReadRow'),button=$('useButton');if(button.parentElement!==host)host.prepend(button);}
 layoutContextActions();
-function resize(){camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);placeTool();layoutContextActions();}window.addEventListener('resize',resize);
+function resize(){camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);placeTool();layoutContextActions();updateCatalogScroll();}window.addEventListener('resize',resize);
 delights=createDelightSystem({scene,getState:()=>state,getPlayer:()=>pos,changed:()=>{dirty=true;},event:(kind,point)=>{audio.play(kind,point);if(kind==='bell')marineLife.greet?.(point);},getBodies:liftBodies,moveRiders:(ids,delta)=>{if(ids.includes('player')){feet+=delta;vy=0;}residents?.carry?.(ids,delta);},obstacles:id=>[...state.buildings.flatMap(boxes),...state.delights.flatMap(p=>p.id===id?propBoxes(p).slice(0,-1):propBoxes(p)),...reefSolids]});
 residents=createResidentSystem({scene,getState:()=>state,getPlayer:()=>pos,canStand:residentCanStand,floorHeight:residentFloor,getDelights:()=>delights,getWindows:()=>marineLife.windows,changed:()=>{dirty=true;},notice:r=>{audio.play('discover');toast(r.habitat==='ocean'?'message.diver':'message.neighbour');}});
 garden=createGardenSystem({scene,getState:()=>state,getPlayer:()=>pos,canStand:(x,z)=>residentCanStand(x,z)&&!state.buildings.some(b=>Math.abs(x-b.gx*2)<1.7&&Math.abs(z-b.gz*2)<1.7),getDelights:()=>delights,flyClear:(x,y,z,own)=>![...state.buildings.flatMap(boxes),...state.delights.filter(p=>p.id!==own).flatMap(p=>propBoxes(p))].some(a=>touches(a,x,z,.13)&&a.maxY>y&&a.minY<y+.3),treeHeight:key=>plantMeshes.get(key)?.userData.perchHeight??3.5,onDiscover:r=>{dirty=true;audio.play('discover');lastReward={seed:r.seed,newSeed:r.newSeed};renderReward();rewardUntil=elapsed+5;$('reward').classList.add('show');toast(r.newSeed?'message.newSeed':'message.secret');burst(Math.round(pos.x/2),Math.round(pos.z/2),'#eddb90');updateHUD();save();}});
@@ -457,7 +474,7 @@ function setupReadingEvents(){
  document.addEventListener('focusout',e=>{menuReading=semanticElement(e.relatedTarget);if(!locked){currentReading=menuReading;renderReading();}});
  $('catalogBody').addEventListener('wheel',e=>{modality='pointer';pointer={x:e.clientX,y:e.clientY};},{passive:true});
  $('catalogBody').addEventListener('scroll',()=>{
-  if(scrollFrame)return;
+  updateCatalogScroll();if(scrollFrame)return;
   scrollFrame=requestAnimationFrame(()=>{scrollFrame=0;
    // Scrolling changes what is under a stationary pointer; it must not resurrect the old card.
    if(!locked&&!$('catalog').hidden&&modality==='pointer'&&pointer)read(document.elementFromPoint(pointer.x,pointer.y));
@@ -485,7 +502,7 @@ function updateReading(now){
  }).map(hit=>{
   let semantic=null;for(let o=hit.object;o;o=o.parent)if(o.userData.reading){semantic=o.userData.reading;break;}
   if(hit.object===ground&&hit.instanceId!==undefined){const c=groundCells[hit.instanceId],p=state.plots[cellKey(c.gx,c.gz)];if(p)semantic={id:'soil:'+cellKey(c.gx,c.gz),key:p.phase==='hole'?'noun.hole':'noun.soil',icon:'fill'};}
-  if(hit.object.parent===plotsGroup)semantic={id:'soil',key:'noun.soil',icon:'fill'};
+  if(hit.object.parent===plotsGroup){const p=state.plots[hit.object.userData.plot];semantic={id:'soil:'+hit.object.userData.plot,key:p?.phase==='hole'?'noun.hole':'noun.soil',icon:'fill'};}
   const material=hit.object.material,opaque=!material?.transparent||material.opacity>.75;
   return {distance:hit.distance,semantic,opaque};
  });
@@ -595,4 +612,4 @@ function frame(now){
 }
 requestAnimationFrame(frame);
 // Read-only observation surface for browser verification and independent criticism.
-Object.defineProperty(window,'kauris',{value:Object.freeze({snapshot:()=>JSON.parse(JSON.stringify({state,player:{x:pos.x,z:pos.z,feet,yaw,pitch,supportId:state.delights.find(p=>p.kind==='lift'&&liftRiders(p,[{id:'player',x:pos.x,z:pos.z,feet}]).length)?.id??null,supportTop:floorAt(pos.x,pos.z)},swimming:swimmingAt(pos.x,pos.z,feet),locked,fallbackLook,tool:tools[tool].key,seed:seedKeys[seedIndex],piece:pieceKeys[pieceIndex],material:MATERIALS[materialIndex],level,rotation,target:target?{gx:target.gx,gz:target.gz,baseY:target.baseY,point:target.point,placement:tool===5?selectedBuild():null,validation:tool===5?placementResult(selectedBuild()).code:null,propId:target.propId,primaryAction:target.propId&&tool<5?state.delights.find(p=>p.id===target.propId)?.kind==='gutter'?'pour':'use':null,buildId:target.buildId,wildId:target.wildId,plot:target.plot,outOfReach:target.outOfReach}:null,chop:{key:chop.key,progress:chopProgress,impacts:totalImpacts},wild:liveWild(state),places:PLACES,homes:findHomes(state.buildings),residents:(state.residents??[]).map(r=>({...r,walking:residents.motion.get(r.id)?.walking??0,feet:residents.models.get(r.id)?.position.y,encounter:residents.motion.get(r.id)?.trip?.propId??null,sitting:residents.motion.get(r.id)?.sit??0,bundleVisible:residents.motion.get(r.id)?.bundle.visible??false})),garden:{animals:garden.snapshot(),discoveries:activeDiscoveries(state),audio:audio.snapshot()},language:i18n.language,reading:currentReading,marine:marineLife.snapshot(),marineTime:marineLife.time,activeTime:livingTime,whale:whale.snapshot(),delights:delights.snapshot(),performance:{renderedFrames:frames,averageFrameMs:timing.reduce((a,b)=>a+b,0)/Math.max(1,timing.length),calls:renderer.info.render.calls,triangles:renderer.info.render.triangles}}))}),writable:false});
+Object.defineProperty(window,'kauris',{value:Object.freeze({snapshot:()=>JSON.parse(JSON.stringify({state,player:{x:pos.x,z:pos.z,feet,yaw,pitch,supportId:state.delights.find(p=>p.kind==='lift'&&liftRiders(p,[{id:'player',x:pos.x,z:pos.z,feet}]).length)?.id??null,supportTop:floorAt(pos.x,pos.z)},swimming:swimmingAt(pos.x,pos.z,feet),locked,fallbackLook,tool:tools[tool].key,seed:seedKeys[seedIndex],piece:pieceKeys[pieceIndex],material:MATERIALS[materialIndex],level,rotation,target:target?{gx:target.gx,gz:target.gz,baseY:target.baseY,point:target.point,placement:tool===5?selectedBuild():null,validation:tool===5?placementResult(selectedBuild()).code:null,propId:target.propId,primaryAction:target.propId&&tool<5?state.delights.find(p=>p.id===target.propId)?.kind==='gutter'?'pour':'use':null,buildId:target.buildId,wildId:target.wildId,plot:target.plot,ground:target.ground,outOfReach:target.outOfReach}:null,chop:{key:chop.key,progress:chopProgress,impacts:totalImpacts},wild:liveWild(state),places:PLACES,homes:findHomes(state.buildings),residents:(state.residents??[]).map(r=>({...r,walking:residents.motion.get(r.id)?.walking??0,feet:residents.models.get(r.id)?.position.y,encounter:residents.motion.get(r.id)?.trip?.propId??null,sitting:residents.motion.get(r.id)?.sit??0,bundleVisible:residents.motion.get(r.id)?.bundle.visible??false})),garden:{animals:garden.snapshot(),discoveries:activeDiscoveries(state),audio:audio.snapshot()},language:i18n.language,reading:currentReading,marine:marineLife.snapshot(),marineTime:marineLife.time,activeTime:livingTime,whale:whale.snapshot(),delights:delights.snapshot(),performance:{renderedFrames:frames,averageFrameMs:timing.reduce((a,b)=>a+b,0)/Math.max(1,timing.length),calls:renderer.info.render.calls,triangles:renderer.info.render.triangles}}))}),writable:false});

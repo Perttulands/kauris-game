@@ -6,7 +6,7 @@ Kauri's game is a peaceful first-person browser game about growing trees, explor
 
 Build with wood, copper, iron, crystal and woven fiber. Connect a water channel to a wheel and bell, light a curtain with a crystal lamp, or add a hammock and lift. Birds and crabs visit homes made for them. Offshore, an occasional whale swims past.
 
-Choose **Suomi, Svenska or English** on the welcome screen or in the Journal. Look at nearby plants, animals and objects—or hover over a menu picture—to see a matching picture and name.
+Choose **Suomi, Svenska or English** on the welcome screen or in the Book. Look at nearby plants, animals and objects—or hover over a menu picture—to see a matching picture and name.
 
 ## Run locally
 
@@ -33,12 +33,12 @@ Your world is saved automatically in this browser. Use the same browser and site
 | Choose a tool | 1–7 or the pictured hotbar |
 | Dig, sow, fill, build, remove | Left click |
 | Water / chop | Hold left click with the watering can / axe |
-| Choose seed or building piece | Mouse wheel or Q / E |
+| Change tool, seed or building piece | Mouse wheel, Q / E or choice arrows |
 | Change building material | M or the material picture |
 | Rotate a building piece | R or the rotate picture |
 | Lower / raise building level | Z / X or − / + |
 | Build menu | Tab or the house button |
-| Journal, seeds and help | J or the book button |
+| Book, seeds and help | J or the book button |
 | Pause / back | Escape |
 | Resume | Play triangle or paused background |
 | Neighbour clothes | Shirt picture or F nearby |

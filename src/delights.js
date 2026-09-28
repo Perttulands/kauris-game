@@ -61,7 +61,8 @@ export function validateDelight(s,p,{legacy=false}={}){
  return result(true,'message.place');
 }
 export function placeDelight(s,p){const check=validateDelight(s,p);if(!check.ok)return check;const spec=DELIGHTS[p.kind];s.delights??=[];const id=Math.max(s.nextDelightId??1,Math.max(0,...s.delights.map(x=>x.id))+1);s.nextDelightId=id+1;const prop={id,kind:p.kind,gx:p.gx,gz:p.gz,rotation:p.rotation,baseY:p.baseY,hostId:p.hostId??null,cost:spec.cost,visited:false,liftY:0,on:true};s.inventory[spec.material]-=spec.cost;s.delights.push(prop);s.stats.built++;return result(true,'message.toyPlaced',{noun:'prop.'+p.kind,count:spec.cost,material:spec.material},{prop});}
-export function removeDelight(s,id,{occupied=false}={}){const p=s.delights?.find(p=>p.id===id);if(!p)return no('message.aimPiece');if(p.kind==='lift'&&p.liftY>.02&&occupied)return no('message.lowerLift');s.delights=s.delights.filter(p=>p.id!==id);s.inventory[DELIGHTS[p.kind].material]+=p.cost;return result(true,'message.refunded',{count:p.cost,material:DELIGHTS[p.kind].material});}
+export function validateRemoveDelight(s,id,{occupied=false}={}){const p=s.delights?.find(p=>p.id===id);if(!p)return no('message.aimPiece');if(p.kind==='lift'&&p.liftY>.02&&occupied)return no('message.lowerLift');return result(true,'message.refunded',{count:p.cost,material:DELIGHTS[p.kind].material});}
+export function removeDelight(s,id,options={}){const check=validateRemoveDelight(s,id,options);if(!check.ok)return check;const p=s.delights.find(p=>p.id===id);s.delights=s.delights.filter(p=>p.id!==id);s.inventory[DELIGHTS[p.kind].material]+=p.cost;return check;}
 export function readDelights(raw,s){
  if(raw===undefined)return [];
  if(!Array.isArray(raw)||raw.length>80)throw Error('Invalid toys');const seen=new Set(),out=[];

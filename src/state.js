@@ -26,7 +26,7 @@ export const validCell=(gx,gz)=>Number.isInteger(gx)&&Number.isInteger(gz)&&Math
 const ok=(code,params={},extra={})=>({ok:true,code,params,...extra});
 const no=(code,params={})=>({ok:false,code,params});
 export function freshState(){
-  const s={version:1,wildRemoved:[],worldHidden:[],residents:[],delights:[],nextDelightId:1,plots:{},buildings:[],inventory:{wood:36,copper:0,iron:0,diamond:0,fiber:0},nextId:1,player:{x:0,y:0,z:9,yaw:0,pitch:-0.18},stats:{planted:0,harvested:0,built:0}};
+  const s={version:1,wildRemoved:[],worldHidden:[],residents:[],delights:[],nextDelightId:1,plots:{},buildings:[],inventory:{wood:36,copper:0,iron:0,diamond:0,fiber:0},nextId:1,player:{x:0,y:0,z:9,yaw:0,pitch:-0.5},stats:{planted:0,harvested:0,built:0}};
   // Harvestable starter orchard; the clearing remains open for the player's creation.
   const orchard=[[-7,-6],[-9,-8],[-5,-10],[-10,-3],[6,-8],[8,-5],[3,-11],[5,-3]];
   ['oak','birch','pine','willow','copper','iron','diamond','flowers'].forEach((seed,i)=>{const [gx,gz]=orchard[i];s.plots[cellKey(gx,gz)]={gx,gz,phase:'filled',seed,growth:1,water:1,variation:plantVariation(gx,gz,seed)};});
@@ -92,12 +92,12 @@ export function harvest(s,gx,gz){
  const spec=SEEDS[p.seed];s.inventory[spec.resource]+=spec.yield;delete s.plots[k];s.stats.harvested++;
  return ok('message.harvested',{count:spec.yield,material:spec.resource},{resource:spec.resource,amount:spec.yield});
 }
-function supported(s,b){
- const same=s.buildings.filter(x=>baseOf(x)===baseOf(b));
+function supported(s,b,excludeId=null){
+ const has=predicate=>s.buildings.some(x=>x.id!==excludeId&&baseOf(x)===baseOf(b)&&predicate(x));
  const boundary=x=>wallLike(x)&&adjacentCells(x).some(c=>c.gx===b.gx&&c.gz===b.gz);
- if(b.kind==='floor')return b.level===0||same.some(x=>boundary(x)&&x.level===b.level-1);
- if(wallLike(b))return same.some(x=>x.kind==='floor'&&x.level===b.level&&adjacentCells(b).some(c=>x.gx===c.gx&&x.gz===c.gz));
- return b.level>=1&&same.some(x=>boundary(x)&&x.level===b.level-1);
+ if(b.kind==='floor')return b.level===0||has(x=>boundary(x)&&x.level===b.level-1);
+ if(wallLike(b))return has(x=>x.kind==='floor'&&x.level===b.level&&adjacentCells(b).some(c=>x.gx===c.gx&&x.gz===c.gz));
+ return b.level>=1&&has(x=>boundary(x)&&x.level===b.level-1);
 }
 export function validateBuild(s,b,{legacy=false}={}){
  if(!Number.isFinite(baseOf(b))||!adjacentCells(b).some(c=>buildBase(c.gx,c.gz)===baseOf(b))||!Object.hasOwn(PIECES,b.kind)||!MATERIALS.includes(b.material)||!Number.isInteger(b.level)||b.level<0||b.level>3||!Number.isInteger(b.rotation)||b.rotation<0||b.rotation>3)return no('message.invalidPiece');
@@ -115,12 +115,15 @@ export function build(s,b){
  const cost=PIECES[b.kind].cost;s.inventory[b.material]-=cost;
  const piece={id:s.nextId++,gx:b.gx,gz:b.gz,kind:b.kind,material:b.material,level:b.level,rotation:b.rotation,baseY:baseOf(b),cost};s.buildings.push(piece);s.stats.built++;reconcileResidents(s);return ok('message.placed',{piece:b.kind,count:cost,material:b.material},{piece});
 }
-export function remove(s,id){
+export function validateRemove(s,id){
  const b=s.buildings.find(x=>x.id===id);if(!b)return no('message.aimPiece');
  if(s.delights?.some(p=>p.hostId===id))return no('message.removeToy');
- const rest={...s,buildings:s.buildings.filter(x=>x.id!==id)};
- if(rest.buildings.some(x=>!supported(rest,x)))return no('message.removeAbove');
- s.buildings=rest.buildings;s.inventory[b.material]+=b.cost;reconcileResidents(s);return ok('message.refunded',{count:b.cost,material:b.material});
+ if(s.buildings.some(x=>x.id!==id&&!supported(s,x,id)))return no('message.removeAbove');
+ return ok('message.refunded',{count:b.cost,material:b.material});
+}
+export function remove(s,id){
+ const check=validateRemove(s,id);if(!check.ok)return check;
+ const b=s.buildings.find(x=>x.id===id);s.buildings=s.buildings.filter(x=>x.id!==id);s.inventory[b.material]+=b.cost;reconcileResidents(s);return check;
 }
 export function serialize(s){return JSON.stringify(s);}
 export function deserialize(raw){
