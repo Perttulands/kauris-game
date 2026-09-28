@@ -1,5 +1,5 @@
 {
-  "sourceCommit": "f64af403f550c3c394c2244da8ae1fd78ce4ff6a",
+  "sourceCommit": "b817501c16fc262f3a478dc22ce38cc016581c11",
   "files": [
     ".gitignore",
     "HOSTING.md",
@@ -127,7 +127,7 @@
     "src/whale.js": "91901a615867193daf72b40f2b73a4bb532b058571ff728d0922350c3a1288b6",
     "src/world-data.js": "448c17f448db3af3d965bf680813b66468e0ac6701478c05db433dddd024bfb1",
     "src/world-layout.js": "d996b937005890bec06671f0968023b2659143f533beef990dd62bd75dd2b768",
-    "src/world-runtime.js": "5f1a614d5bd1570f0b27afe6f7c9436c371754133883772664f4ae278a6b67a2",
+    "src/world-runtime.js": "d63e9c38b7da8e9a34b7f66d40a862789add934f70097d705f82739e1cb57f07",
     "src/world-visuals.js": "28860021549ca2ceacf235da2fb5063e524964db133a3228dab82fc2aa310657",
     "tests/action-feedback.test.js": "816299bec21f45fec151e2658b80177fbd53dfa58b180a43a50912364a5a2e88",
     "tests/audio.test.js": "a7843accc06f85b6946ceb6462f0a3fbbecf40b4b0aafa18974f210531df4f85",
@@ -149,7 +149,7 @@
     "tests/round1.test.js": "ce4301659f28b67f64d4fecd7c354330362032c31e5e40df6b14399727713cbb",
     "tests/state.test.js": "6cb1a2ad9c9c521615fee68d9d0b8d9bca9a73ee79a0d4b0f3643ce16a0674f4",
     "tests/ui-guidance.test.js": "1d862fd5ce27a19d2504f827d79d92df907ae91c493fed2a4c7538a9168583c2",
-    "tests/world-runtime.test.js": "95cbe0ebb71de78fc22e68664392042af663a5dc48dad608594ad409cf4ae2e2",
+    "tests/world-runtime.test.js": "43efb422e264b5e818cbf67c4238eef588b29eabebd3c360242f19d75b0e9b58",
     "tests/world-state.test.js": "8fbd4896860300a24541743bce6e79996be3f7a4333b88ccb8d3c4964f47fce3"
   }
 }

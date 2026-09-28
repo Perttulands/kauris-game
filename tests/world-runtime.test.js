@@ -18,3 +18,14 @@ test('outer garden hole bottom covers its full cell and every face carries the s
  const p={gx:-4,gz:-33,phase:'hole'},material=new MeshBasicMaterial(),parts=plotSurfaces(p,{'-4,-33':p},{wallGeometry:new BoxGeometry(2,.6,.012),wallMaterial:material,soilGeometry:new BoxGeometry(1.82,.035,1.82),soilMaterial:material}),group=new Group();group.add(...parts);group.updateMatrixWorld(true);
  for(const dx of [-.98,-.93,0,.93,.98]){const hits=new Raycaster(new Vector3(-8+dx,1,-66),new Vector3(0,-1,0)).intersectObjects(parts);assert.ok(hits.length,`no open bottom at ${dx}`);assert.equal(hits[0].object.userData.plot,'-4,-33');assert.ok(hits[0].point.y>=-.601);}
 });
+
+test('every crossing frame demotes old detail before promotion and sync preserves queued demotion',()=>{
+ const state=freshState(),world=createWorldRuntime(state);settle(world,0,9);
+ for(const x of [32.1,64.1,96.1,64.1,32.1,0]){
+  world.update(x,9);assert.ok(world.snapshot().detail<=25);
+  state.plots['-20,0']={gx:-20,gz:0,phase:state.plots['-20,0']?.phase==='hole'?'filled':'hole'};world.sync();
+  for(let i=0;i<110;i++){world.update(x,9);assert.ok(world.snapshot().detail<=25,`detail cap at x${x}/frame${i}`);}
+  assert.equal(world.snapshot().detail,25);
+  assert.ok(world.groundMeshes().length>=75,'terrain stays present');
+ }
+});
