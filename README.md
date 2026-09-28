@@ -1,74 +1,60 @@
 # Kauris
 
-A game I am developing with my son: a peaceful little world for growing trees, exploring a turquoise reef and making homes for friendly neighbours.
+I am making Kauris with my son.
 
-Kauris is a first-person, Minecraft-inspired browser game with an authored, blocky orchard and underwater garden. Grow ordinary, metal and diamond trees, gather materials, and build with timber, copper, iron, crystal or woven fiber. Flowers attract butterflies and bees; birds and deer visit the garden. Swim freely, watch shore crabs scuttle and forage, follow a sea turtle, and find an octopus by the reef arch. Loose fish schools, sea stars and anemones inhabit the cove. Discover unusual seeds and welcome a diver into an underwater home. There is no combat, drowning or oxygen timer.
+Kauris is a peaceful first-person browser game about growing trees, exploring the sea and building a village. Its blocky world has ordinary, metal and diamond trees, flower gardens, friendly neighbours and an underwater reef. Play solo, gather materials and make a home above or below the water. There is no combat, drowning or oxygen timer.
 
-This is a small single-player game in active development. Your world stays in this browser’s local storage; no account or server is needed to play. Keep the same browser and site address to keep using that save.
+Build with wood, copper, iron, crystal and woven fiber. Connect a water channel to a wheel and bell, light a curtain with a crystal lamp, or add a hammock and lift. Birds and crabs visit homes made for them. Offshore, an occasional whale swims past.
 
-Choose **Suomi, Svenska or English** on the welcome screen or in the Journal. Menus, guidance and object names change immediately; the language preference is remembered separately from your world. The initial language follows a supported browser language, with English as the fallback.
+Choose **Suomi, Svenska or English** on the welcome screen or in the Journal. Look at nearby plants, animals and objects—or hover over a menu picture—to see a matching picture and name.
 
-The evergreen tree is named **Spruce / Kuusi / Gran**; existing worlds keep their trees and materials.
+## Run locally
 
-Larger text and picture cards make words easier to notice. Look at a nearby tree, flower, animal, neighbour or building, or point to a picture in a menu, to see its name in clear uppercase letters. Keyboard focus works too, including on special seeds you have not found yet. Moving sea creatures also have matching pictured names, with a small aiming allowance that respects walls and rocks. Pictures and words offer a gentle association while playing, without quizzes, narration or claims of tested learning outcomes.
-
-## Run
-
-Use Node 22.12 or newer:
+Install Node.js 22.12 or newer, then run these commands from the game folder:
 
 ```sh
 npm ci
-npm test
 npm run build
 npm run preview
 ```
 
-Open [localhost:4173](http://localhost:4173). `npm run dev` starts development with live reload. The preview serves a stable build. All game assets and sounds run locally; no runtime AI or external asset service is used.
+Open [localhost:4173](http://localhost:4173).
 
-## Play
+Your world is saved automatically in this browser. Use the same browser and site address to return to it. **Create new world** on the pause screen replaces the current world, including its buildings and plants, after confirmation.
+
+## Controls
 
 | Action | Control |
 | --- | --- |
 | Move / look | WASD / mouse |
-| Embedded browser look | Arrow keys or hold right mouse and drag |
+| Look when mouse capture is unavailable | Arrow keys or hold right mouse and drag |
 | Jump / run | Space / Shift |
-| Swim up / down | Space / C or Ctrl; look and swim forward to change depth |
+| Swim up / down | Space / C or Ctrl |
 | Choose a tool | 1–7 or the pictured hotbar |
 | Dig, sow, fill, build, remove | Left click |
 | Water / chop | Hold left click with the watering can / axe |
-| Choose seed or piece | Wheel or Q / E |
-| Change building material | M or pictured material button |
-| Rotate piece | R or rotate picture; plain walls have two directions, other pieces four |
+| Choose seed or building piece | Mouse wheel or Q / E |
+| Change building material | M or the material picture |
+| Rotate a building piece | R or the rotate picture |
 | Lower / raise building level | Z / X or − / + |
-| Build / Journal / pause | Tab / J / Escape |
-| Resume | Click the play triangle or paused background |
+| Build menu | Tab or the house button |
+| Journal, seeds and help | J or the book button |
+| Pause / back | Escape |
+| Resume | Play triangle or paused background |
 | Neighbour clothes | Shirt picture or F nearby |
-| Sound | Speaker button; preference is remembered |
-| Language | Suomi / Svenska / English in the welcome screen or Journal |
-| Read a picture's word | Hover or focus with Tab / Shift-Tab in menus |
+| Sound | Speaker button |
+| Read a menu picture's name | Hover or focus with Tab / Shift-Tab |
 
-Journal (J) contains seeds and help. Create new world is on the pause screen: confirming deletes the current world, including buildings and plants. Cancel keeps it.
+Tab and arrow keys navigate normally inside menus. Menus pause the world, and their contents can be scrolled. Plain walls have two placement directions; other pieces have four.
 
-While a menu is open, Tab and arrow keys retain their normal navigation. Escape returns to the paused welcome screen; the play triangle resumes.
+## Grow and build
 
-Dig a hole, choose a seed, fill the soil and give it a drink. Watered plants mature in about 15–28 seconds of active play. Harvest the starter orchard or wild plants to get more materials. Seeds and water are unlimited. Menus pause growth and creatures; the menus remain scrollable in narrow windows.
+Dig a hole, choose a seed, plant it, fill the soil and water it. Watered plants mature in about 15–28 seconds of play. Harvest trees and flowers for materials; seeds and water are unlimited. You can also gather from the orchard and wild plants.
 
-Build a floor, place walls around its edges, add a doorway and a roof one level above. Connected enclosed rooms share a neighbour. Underwater, use the broad sandy clearing in front of the shell reef; the same house rules welcome a friendly diver. Roofs, all exposed sides and an exterior doorway are required. There is no air-sealing chore. Homes are recognized at their ground or seabed level, rather than across multi-storey layouts. Remove upper pieces before their supports for exact material refunds.
+Open **Build** to choose materials, building pieces and objects. Aim near the edge where you want a wall, window or door. Add a roof one level above the walls. A home with enclosed sides, a doorway and a roof welcomes a neighbour; underwater homes welcome divers. Remove upper pieces before their supports. Removing a piece returns its material cost.
 
-Neighbours remember their homes and clothing. Opening a wall or roof makes them wait calmly until repaired. They follow short safe doorway routes and never block the player. Existing saved houses and planted trees are retained when the game is updated.
+Aim at a nearby object and click the pictured hand to use it. Pour into a water channel with the watering can, place a wheel beside its spout and a bell nearby. Push a hammock, switch on a crystal lamp beside a curtain, or ride a lift. Lower an occupied lift before removing it.
 
-## A living village
+## Explore
 
-Build (Tab) opens materials and building pieces directly, followed by birdhouses, crab shelters, water channels, wheels, bells, lifts, crystal lamps, curtains, hammocks and windsocks. Select a picture to build it; the cost appears beside its material. Removing an object returns its original cost. Clear space around moving cloth, animals and lifts.
-
-Aim nearby and click the pictured hand to use an object. Build and remove tools keep their usual action. Hold the watering can over a channel to pour; a wheel placed beside the channel's spout turns with the flow, and a nearby bell rings. A wheel ghost shows which side connects. Place a lamp near a curtain to light its colored pattern, push a hammock, or use the lift to ride between the ground and a 2.4-metre landing. The lift stops when a body or ceiling blocks its path. Lower an occupied lift before removing it.
-
-A new neighbour carries a bundle home and unpacks a cushion and flower. Neighbours can rest in nearby hammocks, take a safe lift ride and watch through crystal windows. These are short local visits: blocked routes wait rather than moving through walls. Birdhouses welcome a visiting bird. Build a crab shelter on the flat sand just before the reef; a crab can enter, leave a shell and greet a nearby bell. Crystal windows let you read the names of fish outside while retaining their physical boundary.
-
-Beyond the reef the seabed slopes into a deeper, freely swimmable offshore area. An occasional whale approaches, surfaces and departs. The first approach timer starts when you enter offshore water; later visits have quiet intervals. There is no damage or breath limit. Material sounds, water ambience and the whale call use local synthesis, with the existing sound button controlling the whole mix.
-
-## Development
-
-`src/state.js` owns validated commands and saves; `terrain.js`, `building.js` and `residents.js` define the shared physical world. Runtime and asset modules consume those rules. `npm test` runs portable domain and runtime checks. `npm run build` creates the static browser build in `dist/`.
-
-The public repository contains runnable source, original authored assets and tests. Private playtest saves and review recordings are excluded. `python3 scripts/publish-source.py --help` describes the repeatable source-only publication workflow. No public license has been selected.
+Follow paths to discover unusual seeds. Flowers attract butterflies and bees, while deer and birds visit the garden. Swim from the shore to watch crabs, fish schools, sea turtles and an octopus among the reef's corals, sea stars and anemones. Build a crab shelter on the flat sand before the reef, or make an underwater room with crystal windows to watch the sea life outside.
