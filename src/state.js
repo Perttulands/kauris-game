@@ -1,6 +1,6 @@
 import {activeDiscoveries,seedUnlocked,plantVariation,readGarden} from './garden.js';
 import {reconcileResidents,readResidents} from './residents.js';
-import {edgeKey,wallLike,baseOf,canonicalPiece,adjacentCells} from './building.js';
+import {edgeKey,wallLike,baseOf,adjacentCells} from './building.js';
 import {TERRAIN,buildBase,inWorld,terrainHeight} from './terrain.js';
 import {readDelights,propBoxes,boxesOverlap} from './delights.js';
 import {buildingBoxes} from './building.js';
@@ -111,7 +111,6 @@ export function validateBuild(s,b,{legacy=false}={}){
  return ok('message.place');
 }
 export function build(s,b){
- b=canonicalPiece(b);
  const result=validateBuild(s,b);if(!result.ok)return result;
  const cost=PIECES[b.kind].cost;s.inventory[b.material]-=cost;
  const piece={id:s.nextId++,gx:b.gx,gz:b.gz,kind:b.kind,material:b.material,level:b.level,rotation:b.rotation,baseY:baseOf(b),cost};s.buildings.push(piece);s.stats.built++;reconcileResidents(s);return ok('message.placed',{piece:b.kind,count:cost,material:b.material},{piece});
@@ -139,7 +138,7 @@ export function deserialize(raw){
  }
  const ids=new Set();
  for(const rawPiece of [...d.buildings].sort((a,b)=>a.level-b.level||(a.kind==='floor'?-1:b.kind==='floor'?1:0))){
-  const b=canonicalPiece(rawPiece);
+  const b=rawPiece;
   if(!Number.isSafeInteger(b.id)||b.id<1||ids.has(b.id)||b.cost!==PIECES[b.kind]?.cost)throw Error('Invalid building accounting');
   const funded={...s,inventory:Object.fromEntries(MATERIALS.map(m=>[m,1e6]))};
   if(!validateBuild(funded,b,{legacy:true}).ok)throw Error('Invalid building placement');

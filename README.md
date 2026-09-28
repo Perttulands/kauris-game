@@ -6,11 +6,11 @@ Kauris is a first-person, Minecraft-inspired browser game with an authored, bloc
 
 This is a small single-player game in active development. Your world stays in this browser’s local storage; no account or server is needed to play. Keep the same browser and site address to keep using that save.
 
-Choose **Suomi, Svenska or English** on the welcome screen or in the picture book. Menus, guidance and object names change immediately; the language preference is remembered separately from your world. The initial language follows a supported browser language, with English as the fallback.
+Choose **Suomi, Svenska or English** on the welcome screen or in the Journal. Menus, guidance and object names change immediately; the language preference is remembered separately from your world. The initial language follows a supported browser language, with English as the fallback.
 
 The evergreen tree is named **Spruce / Kuusi / Gran**; existing worlds keep their trees and materials.
 
-Larger text and picture cards make words easier to notice. Look at a nearby tree, flower, animal, neighbour or building, or point to a picture in the book, to see its name in clear uppercase letters. Keyboard focus works too, including on special seeds you have not found yet. Moving sea creatures also have matching pictured names, with a small aiming allowance that respects walls and rocks. Pictures and words offer a gentle association while playing, without quizzes, narration or claims of tested learning outcomes.
+Larger text and picture cards make words easier to notice. Look at a nearby tree, flower, animal, neighbour or building, or point to a picture in a menu, to see its name in clear uppercase letters. Keyboard focus works too, including on special seeds you have not found yet. Moving sea creatures also have matching pictured names, with a small aiming allowance that respects walls and rocks. Pictures and words offer a gentle association while playing, without quizzes, narration or claims of tested learning outcomes.
 
 ## Run
 
@@ -38,18 +38,20 @@ Open [localhost:4173](http://localhost:4173). `npm run dev` starts development w
 | Water / chop | Hold left click with the watering can / axe |
 | Choose seed or piece | Wheel or Q / E |
 | Change building material | M or pictured material button |
-| Switch wall axis / rotate roof | R or rotate picture; aim near the edge you want |
+| Rotate piece | R or rotate picture; plain walls have two directions, other pieces four |
 | Lower / raise building level | Z / X or − / + |
-| Picture book / pause | Tab / Escape |
+| Build / Journal / pause | Tab / J / Escape |
 | Resume | Click the play triangle or paused background |
 | Neighbour clothes | Shirt picture or F nearby |
 | Sound | Speaker button; preference is remembered |
-| Language | Suomi / Svenska / English in the welcome screen or picture book |
+| Language | Suomi / Svenska / English in the welcome screen or Journal |
 | Read a picture's word | Hover or focus with Tab / Shift-Tab in menus |
+
+Journal (J) contains seeds and help. Create new world is on the pause screen: confirming deletes the current world, including buildings and plants. Cancel keeps it.
 
 While a menu is open, Tab and arrow keys retain their normal navigation. Escape returns to the paused welcome screen; the play triangle resumes.
 
-Dig a hole, choose a seed, fill the soil and give it a drink. Watered plants mature in about 15–28 seconds of active play. Harvest the starter orchard or wild plants to get more materials. Seeds and water are unlimited. Menus pause growth and creatures; the picture book remains scrollable in narrow windows.
+Dig a hole, choose a seed, fill the soil and give it a drink. Watered plants mature in about 15–28 seconds of active play. Harvest the starter orchard or wild plants to get more materials. Seeds and water are unlimited. Menus pause growth and creatures; the menus remain scrollable in narrow windows.
 
 Build a floor, place walls around its edges, add a doorway and a roof one level above. Connected enclosed rooms share a neighbour. Underwater, use the broad sandy clearing in front of the shell reef; the same house rules welcome a friendly diver. Roofs, all exposed sides and an exterior doorway are required. There is no air-sealing chore. Homes are recognized at their ground or seabed level, rather than across multi-storey layouts. Remove upper pieces before their supports for exact material refunds.
 
@@ -57,7 +59,7 @@ Neighbours remember their homes and clothing. Opening a wall or roof makes them 
 
 ## A living village
 
-The picture book includes birdhouses, crab shelters, water channels, wheels, bells, lifts, crystal lamps, curtains, hammocks and windsocks. Select a picture to build it; the cost appears beside its material. Removing an object returns its original cost. Clear space around moving cloth, animals and lifts.
+Build (Tab) opens materials and building pieces directly, followed by birdhouses, crab shelters, water channels, wheels, bells, lifts, crystal lamps, curtains, hammocks and windsocks. Select a picture to build it; the cost appears beside its material. Removing an object returns its original cost. Clear space around moving cloth, animals and lifts.
 
 Aim nearby and click the pictured hand to use an object. Build and remove tools keep their usual action. Hold the watering can over a channel to pour; a wheel placed beside the channel's spout turns with the flow, and a nearby bell rings. A wheel ghost shows which side connects. Place a lamp near a curtain to light its colored pattern, push a hammock, or use the lift to ride between the ground and a 2.4-metre landing. The lift stops when a body or ceiling blocks its path. Lower an occupied lift before removing it.
 

@@ -2,7 +2,7 @@ import {TERRAIN,terrainHeight} from './terrain.js';
 import {solidInterval} from './reef-collision.js';
 import {propBoxes,propAnchor} from './delights.js';
 import {findHomes} from './residents.js';
-import {adjacentCells,baseOf,buildingBoxes} from './building.js';
+import {adjacentCells,baseOf,buildingBoxes,canonicalPiece} from './building.js';
 
 // Transient inhabitants: never read or write inventories, plots or saved actors.
 // The visual factory supplies conservative bounds including every moving limb.
@@ -148,7 +148,7 @@ export function createMarineLife({profiles,reefSolids=[],buildings=[]}){
   const homes=findHomes(next);windows=[];
   for(const b of next)if(b.material==='diamond'&&b.kind==='window'&&b.level===0&&baseOf(b)<-1){
    const cells=adjacentCells(b),home=homes.find(h=>h.baseY===baseOf(b)&&h.cells.some(k=>cells.some(c=>k===`${c.gx},${c.gz}`)));if(!home)continue;
-   const inside=cells.find(c=>home.cells.includes(`${c.gx},${c.gz}`)),axis=b.rotation%2,nx=axis?(inside.gx===b.gx?-1:1):0,nz=axis?0:(inside.gz===b.gz?-1:1),x=b.gx*2-(axis?1:0),z=b.gz*2-(axis?0:1);
+   const edge=canonicalPiece(b),inside=cells.find(c=>home.cells.includes(`${c.gx},${c.gz}`)),axis=edge.rotation,nx=axis?(inside.gx===edge.gx?-1:1):0,nz=axis?0:(inside.gz===edge.gz?-1:1),x=edge.gx*2-(axis?1:0),z=edge.gz*2-(axis?0:1);
    windows.push({id:b.id,x:x+nx*.95,y:baseOf(b)+1.25,z:z+nz*.95,nx,nz,inside:{x:x-nx*.68,z:z-nz*.68},baseY:baseOf(b)});
   }
  }

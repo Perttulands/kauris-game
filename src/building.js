@@ -1,6 +1,20 @@
-// Wall anchors encode a physical grid edge, independently from its supporting cell.
+// Saved anchors and facing are visual transforms; canonical copies identify physical edges.
 export const wallLike=b=>['wall','window','door'].includes(b.kind);
 export const baseOf=b=>b.baseY===undefined?0:b.baseY;
+export const rotationCount=kind=>kind==='wall'?2:4;
+export function placementTransform({kind,gx,gz,rotation},point){
+ rotation=((rotation%rotationCount(kind))+rotationCount(kind))%rotationCount(kind);
+ if(wallLike({kind})){
+  const axis=rotation%2;
+  if(axis===0&&point.z>gz*2)gz++;
+  if(axis===1&&point.x>gx*2)gx++;
+  // Choose the physical edge first, then retain the requested visible facing.
+  if(rotation===2)gz--;
+  else if(rotation===3)gx--;
+ }
+ return {gx,gz,rotation};
+}
+// Query-only projection: never use this copy to rewrite a paid/save transform.
 export function canonicalPiece(b){
  const c={...b,baseY:baseOf(b)};
  if(wallLike(c)){if(c.rotation===2){c.gz++;c.rotation=0;}else if(c.rotation===3){c.gx++;c.rotation=1;}}

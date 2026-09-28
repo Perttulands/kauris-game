@@ -64,3 +64,38 @@
 #contextActions{position:absolute;right:18px;bottom:250px;display:flex;align-items:center;gap:12px;pointer-events:none}
 #contextActions #friendButton,#contextActions #useButton{position:static;inset:auto;flex-shrink:0}
 @media(max-width:760px){#contextActions{right:16px;top:210px;bottom:auto}}
+
+/* Build / Journal: fixed shell; only choices scroll. Reading never moves a choice. */
+.menuShortcuts,.pauseMenus,.catalogTabs{display:flex;gap:10px;align-items:center}
+.menuShortcuts button,.pauseMenus button,.catalogTabs button{display:flex;align-items:center;gap:8px}
+.menuShortcuts{pointer-events:auto}.menuShortcuts button{padding:8px}.menuShortcuts svg{width:30px;height:30px}.menuShortcuts span{font-size:18px}
+.pauseMenus{margin:18px 0;flex-wrap:wrap}.pauseMenus svg{width:28px;height:28px}.welcome #reset{color:#f5e4bf;margin-top:12px;padding:10px;text-align:left;border:1px solid #a4b89d}
+#pauseTitle:empty{display:none}#pauseTitle{margin:8px 0;font-size:28px}
+#catalog{padding:18px 4vw;overflow:hidden}
+#catalog .catalogPanel{height:100%;max-height:100%;display:flex;flex-direction:column;overflow:hidden;padding:18px}
+#catalog .catalogHeader{flex:none;gap:12px;padding-bottom:12px;align-items:stretch}
+#catalog .catalogHeader button{min-height:52px;padding:8px 12px;font-size:20px;gap:8px}
+#catalog .catalogHeader svg{width:30px;height:30px;flex-shrink:0}
+#catalog .catalogTabs button{background:#e1e8d2;color:var(--ink);border:2px solid #afc298}
+#catalog .catalogTabs button[aria-pressed=true]{background:#ffedb3;border-color:#678947}
+#catalog #closeCatalog{position:static;inset:auto;box-shadow:none;margin-left:auto}
+#catalogBody{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable;padding:0 8px 12px 2px}
+#catalogBody h2{font-size:26px;margin:4px 0 10px}#catalogBody h3{font-size:26px;margin:22px 0 12px}
+#catalogBody #materialCards{margin:0;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
+#catalogBody #materialCards button{min-width:0;font-size:20px;justify-content:center;padding:6px;gap:5px}
+#catalogBody #materialCards img{width:40px;height:44px}
+#catalogBody #pieceCards{grid-template-columns:repeat(5,minmax(0,1fr))}
+#catalogBody #pieceCards .card b{font-size:22px}
+#catalog #bookWordSlot{position:static;inset:auto;flex:0 0 132px;height:132px;min-height:132px;margin:10px 0 0;background:transparent;display:flex;align-items:center;justify-content:center}
+#catalog #bookWordSlot #wordCard{width:100%;max-height:132px;min-height:0;height:100%;margin:0}
+#catalog #wordCard.menuWord #wordText{font-size:44px;min-width:0}
+@media(max-width:760px){
+ .menuShortcuts{gap:5px}.menuShortcuts button{flex-direction:column;gap:1px}.menuShortcuts button kbd{display:inline;font-size:16px}.menuShortcuts button span{display:none}
+ #catalog{padding:12px}#catalog .catalogPanel{padding:12px}
+ #catalog .catalogHeader{flex-wrap:wrap;gap:8px}#catalog .catalogHeader button{font-size:18px;padding:8px;gap:6px}
+ #catalog .catalogTabs{gap:6px}#catalog .catalogTabs kbd{display:none}#catalog .catalogHeader svg{width:26px;height:26px}
+ #catalog #closeCatalog span{max-width:130px;white-space:normal}
+ #catalogBody #materialCards{grid-template-columns:repeat(3,minmax(0,1fr))}
+ #catalogBody #pieceCards{grid-template-columns:repeat(2,minmax(0,1fr))}
+ #catalog #wordCard.menuWord #wordText{font-size:36px}
+}

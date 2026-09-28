@@ -2,18 +2,18 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {freshState,build,remove,serialize,deserialize,dig} from '../src/state.js';
 import {findHomes,reconcileResidents} from '../src/residents.js';
-import {buildingBoxes,edgeKey} from '../src/building.js';
+import {buildingBoxes,edgeKey,canonicalPiece} from '../src/building.js';
 import {TERRAIN,terrainHeight,buildBase} from '../src/terrain.js';
 import {verticalStep,swimmingAt} from '../src/movement.js';
 const part=(kind,gx=0,gz=0,rotation=0,baseY=0)=>({kind,gx,gz,rotation,baseY,level:kind==='roof'?1:0,material:'wood'});
 const room=(gx,gz,baseY)=>[part('floor',gx,gz,0,baseY),...['door','wall','window','wall'].map((kind,r)=>part(kind,gx,gz,r,baseY)),part('roof',gx,gz,3,baseY)];
 test('legacy opposite walls preserve exact boxes, boundary14, doorway normals, paid cost and home on repeated reload',()=>{
  const s=freshState();s.buildings=room(13,13,0).map((b,i)=>({...b,id:i+1,cost:b.kind==='floor'?2:b.kind==='door'?4:3}));
- s.inventory.wood=18;reconcileResidents(s);s.residents[0].outfit=2;const before=s.buildings.map(b=>({id:b.id,boxes:buildingBoxes(b),key:edgeKey(b)})),home=findHomes(s.buildings)[0];
+ s.inventory.wood=18;reconcileResidents(s);s.residents[0].outfit=2;const before=s.buildings.map(b=>({id:b.id,transform:{gx:b.gx,gz:b.gz,rotation:b.rotation},boxes:buildingBoxes(b),key:edgeKey(b)})),home=findHomes(s.buildings)[0];
  for(const b of s.buildings)delete b.baseY;for(const r of s.residents){delete r.baseY;delete r.habitat;}delete s.player.y;
  const loaded=deserialize(serialize(s));
- for(const p of loaded.buildings){assert.deepEqual(buildingBoxes(p),before.find(x=>x.id===p.id).boxes);if(['wall','door','window'].includes(p.kind))assert.ok(p.rotation<2);}
- assert.ok(loaded.buildings.some(b=>b.gx===14));assert.ok(loaded.buildings.some(b=>b.gz===14));assert.equal(loaded.buildings.find(b=>b.kind==='roof').rotation,3);
+ for(const p of loaded.buildings){const original=before.find(x=>x.id===p.id);assert.deepEqual(buildingBoxes(p),original.boxes);assert.equal(edgeKey(p),original.key);assert.deepEqual({gx:p.gx,gz:p.gz,rotation:p.rotation},original.transform);}
+ assert.ok(loaded.buildings.some(b=>canonicalPiece(b).gx===14));assert.ok(loaded.buildings.some(b=>canonicalPiece(b).gz===14));assert.equal(loaded.buildings.find(b=>b.kind==='roof').rotation,3);
  assert.deepEqual(findHomes(loaded.buildings)[0].doors,home.doors);assert.equal(loaded.residents[0].id,s.residents[0].id);assert.equal(loaded.residents[0].outfit,2);assert.deepEqual(loaded.inventory,s.inventory);
  assert.deepEqual(deserialize(serialize(loaded)),loaded);
  const floor=loaded.buildings.find(b=>b.kind==='floor');assert.equal(remove(loaded,floor.id).ok,false);

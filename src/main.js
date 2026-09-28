@@ -12,7 +12,7 @@ import {activeDiscoveries,seedUnlocked,isFlower,setOutfit} from './garden.js';
 import {createGardenSystem} from './garden-runtime.js';
 import {createAudio} from './audio.js';
 import {TERRAIN,terrainHeight,inWorld,buildBase} from './terrain.js';
-import {wallLike,baseOf,canonicalPiece,adjacentCells,buildingBoxes as boxes,touches} from './building.js';
+import {wallLike,baseOf,rotationCount,placementTransform,adjacentCells,buildingBoxes as boxes,touches} from './building.js';
 import {swimmingAt,verticalStep} from './movement.js';
 import {reefBlocked,reefFloor,reefCeiling,reefSafeFeet} from './reef-collision.js';
 import {createOceanWorld,createReefCover} from './ocean-visuals.js';
@@ -31,8 +31,8 @@ import './ui.css';
 const $=id=>document.getElementById(id), canvas=$('game');
 let localeStorage;try{localeStorage=localStorage;}catch{}
 const i18n=createI18n({storage:localeStorage,languages:navigator.languages}),t=i18n.t;
-let state=freshState(),loadWarning='';
-try{const raw=localStorage.getItem(SAVE_KEY);if(raw)state=deserialize(raw);}catch{loadWarning='ui.loadWarning';}
+let state=freshState(),loadWarning='',hasSavedWorld=false;
+try{const raw=localStorage.getItem(SAVE_KEY);if(raw){state=deserialize(raw);hasSavedWorld=true;}}catch{loadWarning='ui.loadWarning';}
 const renderer=new THREE.WebGLRenderer({canvas,antialias:true,powerPreference:'high-performance'});
 renderer.setPixelRatio(Math.min(devicePixelRatio,1.6));renderer.setSize(innerWidth,innerHeight);renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFShadowMap;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=.95;
 const scene=new THREE.Scene(),dayBackground=new THREE.Color('#b7d7d7');scene.background=dayBackground;scene.fog=new THREE.Fog('#b7d7d7',38,118);
@@ -123,7 +123,7 @@ let fallbackLook=false,rightDrag=false;
 let tool=0,seedIndex=0,pieceIndex=0,materialIndex=0,rotation=0,level=0,toolMesh,preview,connectionGhost;
 const seedKeys=Object.keys(SEEDS),pieceKeys=[...Object.keys(PIECES),...DELIGHT_KEYS];
 const isToy=()=>Object.hasOwn(DELIGHTS,pieceKeys[pieceIndex]);
-let yaw=state.player.yaw,pitch=state.player.pitch,feet=reefSafeFeet(reefSolids,state.player.x,state.player.z,state.player.y??0),vy=0,locked=false,held=false,catalogOpen=false,started=false,dirty=false,lastSave=0,elapsed=0,target=null,swing=0,toastUntil=0;
+let yaw=state.player.yaw,pitch=state.player.pitch,feet=reefSafeFeet(reefSolids,state.player.x,state.player.z,state.player.y??0),vy=0,locked=false,held=false,catalogOpen=false,menuMode='build',started=false,dirty=false,lastSave=0,elapsed=0,target=null,swing=0,toastUntil=0;
 const pos=new THREE.Vector3(state.player.x,0,state.player.z),keys=new Set();
 const waterPositions=new Float32Array(28*3),waterGeometry=new THREE.BufferGeometry();waterGeometry.setAttribute('position',new THREE.BufferAttribute(waterPositions,3));
 const dropCanvas=document.createElement('canvas');dropCanvas.width=dropCanvas.height=32;const dc=dropCanvas.getContext('2d'),dg=dc.createRadialGradient(16,16,1,16,16,15);dg.addColorStop(0,'#ffffff');dg.addColorStop(.45,'#ffffffdd');dg.addColorStop(1,'#ffffff00');dc.fillStyle=dg;dc.fillRect(0,0,32,32);
@@ -167,16 +167,13 @@ function sync(){
 }
 function selectedBuild(){
  if(!target)return null;
- let gx=target.gx,gz=target.gz;const kind=pieceKeys[pieceIndex],axis=rotation%2;
+ let gx=target.gx,gz=target.gz;const kind=pieceKeys[pieceIndex];
  if(isToy()){const host=state.buildings.find(b=>b.id===target.buildId&&b.kind==='floor'),hostId=kind==='lift'?null:host?.id??null;return {kind,gx,gz,rotation,hostId,baseY:propSupport(state,kind,gx,gz,hostId)??target.baseY??0};}
- if(wallLike({kind})){
-  // Pick the near/far physical boundary from aim; rotate chooses just the wall axis.
-  if(axis===0&&target.point.z>gz*2)gz++;
-  if(axis===1&&target.point.x>gx*2)gx++;
- }
- return {gx,gz,kind,material:MATERIALS[materialIndex],rotation:wallLike({kind})?axis:rotation,level,baseY:target.baseY??buildBase(target.gx,target.gz)??terrainHeight(target.point.x,target.point.z)};
+ const placement=placementTransform({kind,gx,gz,rotation},target.point);
+ return {...placement,kind,material:MATERIALS[materialIndex],level,baseY:target.baseY??buildBase(target.gx,target.gz)??terrainHeight(target.point.x,target.point.z)};
 }
-function rotateChoice(){rotation=(rotation+1)%(wallLike({kind:pieceKeys[pieceIndex]})?2:4);updateHUD();}
+function rotateChoice(){rotation=(rotation+1)%rotationCount(pieceKeys[pieceIndex]);updateHUD();}
+
 function intersectsPlayer(b){return boxes(b).some(a=>touches(a,pos.x,pos.z)&&a.maxY>feet+.3&&a.minY<feet+1.65);}
 function canWalk(x,z){
  if(!inWorld(x,z)||reefBlocked(reefSolids,x,z,feet))return false;
@@ -223,7 +220,10 @@ const steps=[['shovel',0],['seed',1],['fill',2],['hose',3],['grow',null],['axe',
 function stageFor(p){return !p?0:p.phase==='hole'?(p.seed?2:1):p.seed?(p.growth>=1?5:p.water<.2?3:4):0;}
 function contextStage(){if(target?.wildId)return 5;const p=target&&state.plots[cellKey(target.gx,target.gz)];if(p)return stageFor(p);if(state.stats.harvested>0)return 6;const active=Object.values(state.plots).find(p=>p.growth<1);return active?stageFor(active):0;}
 function setupPictures(){
- $('menuButton').innerHTML=icon('book')+'<kbd>Tab</kbd>';$('closeCatalog').innerHTML=icon('back')+icon('play');$('start').innerHTML=icon('play')+'<span>'+t('ui.play')+'</span>';
+ for(const [id,name,key] of [['menuButton','build','Tab'],['journalButton','book','J'],['pauseBuild','build','Tab'],['pauseJournal','book','J'],['buildTab','build','Tab'],['journalTab','book','J']]){
+  const label=t(name==='build'?'ui.buildMenu':'ui.journalMenu');$(id).innerHTML=icon(name)+`<span>${label}</span><kbd>${key}</kbd>`;$(id).setAttribute('aria-label',label);
+ }
+ $('closeCatalog').innerHTML=icon('play')+'<span>'+t('ui.resume')+'</span>';$('closeCatalog').setAttribute('aria-label',t('ui.resume'));refreshPause();
  $('welcomePictures').innerHTML=icon('seed')+icon('grow')+picture('seed:oak',t('tree.oak'))+icon('build')+picture('piece:roof:wood',t('aria.buildHouse'));
  $('loopGuide').innerHTML=steps.map(([name],i)=>`<button data-step="${i}" aria-label="${t('action.'+name)}" title="${t('action.'+name)}">${icon(name)}</button>`).join('');
  $('loopGuide').querySelectorAll('button').forEach(b=>b.onclick=()=>{const index=steps[Number(b.dataset.step)][1];if(index!==null)chooseTool(index);});
@@ -241,16 +241,33 @@ function updateJournal(){
  const stage=contextStage();$('loopGuide').querySelectorAll('button').forEach((b,i)=>{b.classList.toggle('current',i===stage);b.classList.toggle('next',i===stage+1);});
  $('objective').textContent=t(title);$('journalText').textContent=t(detail,params);
 }
-function showCatalog(show=true){clearReading();if(show){audio.pause();clearEffects();}resetActions();$('wardrobe').hidden=true;outfitResident=null;catalogOpen=show;$('catalog').hidden=!show;held=false;keys.clear();if(show){locked=false;document.exitPointerLock?.();$('overlay').hidden=true;renderCatalog();$('bookLanguage').focus({preventScroll:true});}else{requestLock();}}
+function refreshPause(){const key=started||hasSavedWorld?'ui.resume':'ui.start';$('start').innerHTML=icon('play')+'<span>'+t(key)+'</span>';$('start').setAttribute('aria-label',t(key));$('pauseTitle').textContent=started||hasSavedWorld?t('ui.paused'):'';}
+function showCatalog(show=true,mode=menuMode){
+ clearReading();if(show){audio.pause();clearEffects();}resetActions();$('wardrobe').hidden=true;outfitResident=null;catalogOpen=show;$('catalog').hidden=!show;held=false;keys.clear();
+ if(show){menuMode=mode;locked=false;document.exitPointerLock?.();$('overlay').hidden=true;renderCatalog();$('catalogBody').scrollTop=0;(mode==='journal'?$('bookLanguage'):$('materialCards').querySelector('.chosen')).focus({preventScroll:true});}
+ else requestLock();
+}
+// Keep the actual focused/hovered buttons, even when their localized contents change.
+function reconcileCards(id,html){
+ const root=$(id),template=document.createElement('template');template.innerHTML=html;
+ for(const [index,next] of [...template.content.children].entries()){
+  const current=root.children[index];if(!current){root.append(next);continue;}
+  for(const name of current.getAttributeNames())if(!next.hasAttribute(name))current.removeAttribute(name);
+  for(const attribute of next.attributes)if(current.getAttribute(attribute.name)!==attribute.value)current.setAttribute(attribute.name,attribute.value);
+  if(current.innerHTML!==next.innerHTML)current.innerHTML=next.innerHTML;
+ }
+}
 function renderCatalog(){
- $('seedCards').innerHTML=seedKeys.map((k,i)=>{const spec=SEEDS[k],unlocked=seedUnlocked(state,k),noun=t('tree.'+k);return `<button aria-disabled="${!unlocked}" class="card ${unlocked?'':'seedLocked'} ${i===seedIndex?'chosen':''}" data-seed="${i}" data-word="tree.${k}" data-picture="seed:${k}" aria-label="${t('ui.plantChoice',{noun})}${unlocked?'':'. '+t('ui.lockedSeed')}" aria-pressed="${i===seedIndex}">${picture('seed:'+k,t('ui.maturePicture',{noun}))}${unlocked?'':`<span class="chosenMark">${icon('lock')}</span>`}${i===seedIndex?`<span class="chosenMark">${icon('check')}</span>`:''}<b>${noun}</b><small>${icon(spec.resource)} +${spec.yield}</small></button>`;}).join('');
- $('pieceCards').innerHTML=Object.keys(PIECES).map((k,i)=>`<button class="card ${i===pieceIndex?'chosen':''}" data-piece="${i}" data-word="piece.${k}" data-picture="piece:${k}:${MATERIALS[materialIndex]}" aria-label="${t('ui.buildChoice',{piece:t('piece.'+k)})}">${picture(`piece:${k}:${MATERIALS[materialIndex]}`,t('piece.'+k))}<b>${t('piece.'+k)}</b><small>${icon(MATERIALS[materialIndex])} ${PIECES[k].cost}</small></button>`).join('');
- $('toyCards').innerHTML=DELIGHT_KEYS.map(k=>{const d=DELIGHTS[k];return `<button class="card ${pieceKeys[pieceIndex]===k?'chosen':''}" data-toy="${k}" data-word="prop.${k}" data-picture="prop:${k}" aria-label="${t('prop.'+k)}">${picture('prop:'+k,t('prop.'+k))}<b>${t('prop.'+k)}</b><small>${icon(d.material)} ${d.cost}</small></button>`;}).join('');
+ $('buildChoices').hidden=menuMode!=='build';$('journalChoices').hidden=menuMode!=='journal';
+ $('buildTab').setAttribute('aria-pressed',String(menuMode==='build'));$('journalTab').setAttribute('aria-pressed',String(menuMode==='journal'));
+ reconcileCards('seedCards',seedKeys.map((k,i)=>{const spec=SEEDS[k],unlocked=seedUnlocked(state,k),noun=t('tree.'+k);return `<button aria-disabled="${!unlocked}" class="card ${unlocked?'':'seedLocked'} ${i===seedIndex?'chosen':''}" data-seed="${i}" data-word="tree.${k}" data-picture="seed:${k}" aria-label="${t('ui.plantChoice',{noun})}${unlocked?'':'. '+t('ui.lockedSeed')}" aria-pressed="${i===seedIndex}">${picture('seed:'+k,t('ui.maturePicture',{noun}))}${unlocked?'':`<span class="chosenMark">${icon('lock')}</span>`}${i===seedIndex?`<span class="chosenMark">${icon('check')}</span>`:''}<b>${noun}</b><small>${icon(spec.resource)} +${spec.yield}</small></button>`;}).join(''));
+ reconcileCards('pieceCards',Object.keys(PIECES).map((k,i)=>`<button class="card ${i===pieceIndex?'chosen':''}" data-piece="${i}" data-word="piece.${k}" data-picture="piece:${k}:${MATERIALS[materialIndex]}" aria-label="${t('ui.buildChoice',{piece:t('piece.'+k)})}">${picture(`piece:${k}:${MATERIALS[materialIndex]}`,t('piece.'+k))}<b>${t('piece.'+k)}</b><small>${icon(MATERIALS[materialIndex])} ${PIECES[k].cost}</small></button>`).join(''));
+ reconcileCards('toyCards',DELIGHT_KEYS.map(k=>{const d=DELIGHTS[k];return `<button class="card ${pieceKeys[pieceIndex]===k?'chosen':''}" data-toy="${k}" data-word="prop.${k}" data-picture="prop:${k}" aria-label="${t('prop.'+k)}">${picture('prop:'+k,t('prop.'+k))}<b>${t('prop.'+k)}</b><small>${icon(d.material)} ${d.cost}</small></button>`;}).join(''));
  $('toyCards').querySelectorAll('button').forEach(b=>b.onclick=()=>{pieceIndex=pieceKeys.indexOf(b.dataset.toy);level=0;chooseTool(5);showCatalog(false);});
- $('materialCards').innerHTML=MATERIALS.map((m,i)=>`<button data-material="${i}" data-word="material.${m}" data-picture="piece:wall:${m}" class="${i===materialIndex?'chosen':''}" aria-label="${t('ui.materialChoice',{material:t('material.'+m)})}" aria-pressed="${i===materialIndex}">${picture('piece:wall:'+m,t('material.'+m))}${t('material.'+m)}</button>`).join('');
+ reconcileCards('materialCards',MATERIALS.map((m,i)=>`<button data-material="${i}" data-word="material.${m}" data-picture="piece:wall:${m}" class="${i===materialIndex?'chosen':''}" aria-label="${t('ui.materialChoice',{material:t('material.'+m)})}" aria-pressed="${i===materialIndex}">${picture('piece:wall:'+m,t('material.'+m))}${t('material.'+m)}</button>`).join(''));
  $('seedCards').querySelectorAll('button').forEach(b=>b.onclick=()=>{if(!seedUnlocked(state,seedKeys[Number(b.dataset.seed)]))return;seedIndex=Number(b.dataset.seed);chooseTool(1);showCatalog(false);});
  $('pieceCards').querySelectorAll('button').forEach(b=>b.onclick=()=>{pieceIndex=Number(b.dataset.piece);level=pieceKeys[pieceIndex]==='roof'?1:0;chooseTool(5);showCatalog(false);});
- $('materialCards').querySelectorAll('button').forEach(b=>b.onclick=()=>{materialIndex=Number(b.dataset.material);chooseTool(5);renderCatalog();});
+ $('materialCards').querySelectorAll('button').forEach(b=>b.onclick=()=>{materialIndex=Number(b.dataset.material);chooseTool(5);renderCatalog();menuReading=currentReading=semanticElement(b);renderReading();});
 }
 function setupLivingUI(){
  const mute=$('muteButton');const refresh=()=>{mute.innerHTML=icon(audio.muted?'mute':'sound');mute.setAttribute('aria-label',t(audio.muted?'aria.unmute':'aria.mute'));mute.setAttribute('aria-pressed',String(audio.muted));};refresh();mute.onclick=()=>{audio.toggle();refresh();};
@@ -277,18 +294,23 @@ function requestLock(){
 }
 $('overlay').addEventListener('click',e=>{if(!e.target.closest('button,a,input,select,option,label,summary,details')){e.preventDefault();e.stopPropagation();requestLock();}});
 canvas.addEventListener('click',()=>{if(!locked&&!catalogOpen&&outfitResident===null)requestLock();});
-$('start').onclick=requestLock;$('menuButton').onclick=()=>showCatalog();$('closeCatalog').onclick=()=>showCatalog(false);
-$('reset').onclick=()=>{if(confirm(t('ui.resetConfirm'))){state=freshState();seedIndex=0;clearEffects();garden.reset();pos.set(0,0,9);feet=0;yaw=0;pitch=-.18;dirty=true;save();sync();showCatalog(false);}};
-document.addEventListener('pointerlockchange',()=>{if(fallbackLook)return;resetActions();locked=document.pointerLockElement===canvas;held=false;keys.clear();if(locked){started=true;$('overlay').hidden=true;$('catalog').hidden=true;catalogOpen=false;}else if(!catalogOpen){clearReading();audio.pause();clearEffects();$('overlay').hidden=false;$('start').innerHTML=icon('play')+'<span>'+t('ui.play')+'</span>';}save();});
+$('start').onclick=requestLock;for(const id of ['menuButton','pauseBuild','buildTab'])$(id).onclick=()=>showCatalog(true,'build');for(const id of ['journalButton','pauseJournal','journalTab'])$(id).onclick=()=>showCatalog(true,'journal');$('closeCatalog').onclick=()=>showCatalog(false);
+$('reset').onclick=()=>{
+ if(!confirm(t('ui.resetConfirm')))return;
+ // Persist first: a denied write leaves the old world intact. Reload disposes all old runtime identities.
+ try{localStorage.setItem(SAVE_KEY,serialize(freshState()));dirty=false;location.reload();}
+ catch{saveStatus('ui.saveUnavailable');$('welcomeSave').textContent=t('ui.saveUnavailable');}
+};
+document.addEventListener('pointerlockchange',()=>{if(fallbackLook)return;resetActions();locked=document.pointerLockElement===canvas;held=false;keys.clear();if(locked){started=true;$('overlay').hidden=true;$('catalog').hidden=true;catalogOpen=false;}else if(!catalogOpen){clearReading();audio.pause();clearEffects();$('overlay').hidden=false;refreshPause();}save();});
 document.addEventListener('pointerlockerror',activateFallback);
 document.addEventListener('mousemove',e=>{if(locked&&(!fallbackLook||rightDrag)){yaw-=e.movementX*.0022;pitch=Math.max(-1.45,Math.min(1.45,pitch-e.movementY*.0022));dirty=true;}});
 document.addEventListener('keydown',e=>{
- if(!locked){if(e.code==='Escape'){e.preventDefault();catalogOpen=false;outfitResident=null;$('catalog').hidden=true;$('wardrobe').hidden=true;$('overlay').hidden=false;clearReading();$('start').focus();}return;}
+ if(!locked){if(e.code==='Escape'){e.preventDefault();catalogOpen=false;outfitResident=null;$('catalog').hidden=true;$('wardrobe').hidden=true;$('overlay').hidden=false;clearReading();refreshPause();$('start').focus();}return;}
  if(e.target.closest('select,input,textarea')||e.target.closest('button,a,summary')&&['Space','Enter'].includes(e.code))return;
  if(['Tab','Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code))e.preventDefault();
  if(e.code==='KeyF'&&locked&&nearestFriend){openWardrobe(nearestFriend.id);return;}
- if(e.code==='Escape'&&fallbackLook){audio.pause();clearEffects();resetActions();locked=false;held=false;rightDrag=false;clearReading();keys.clear();catalogOpen=false;$('catalog').hidden=true;$('overlay').hidden=false;$('start').innerHTML=icon('play')+'<span>'+t('ui.play')+'</span>';save();return;}
- if(e.code==='Tab'){showCatalog(!catalogOpen);return;}
+ if(e.code==='Escape'&&fallbackLook){audio.pause();clearEffects();resetActions();locked=false;held=false;rightDrag=false;clearReading();keys.clear();catalogOpen=false;$('catalog').hidden=true;$('overlay').hidden=false;refreshPause();save();return;}
+ if(e.code==='Tab'||e.code==='KeyJ'){e.preventDefault();showCatalog(true,e.code==='Tab'?'build':'journal');return;}
  if(!locked)return;keys.add(e.code);if(e.repeat)return;
  if(/^Digit[1-7]$/.test(e.code)){chooseTool(Number(e.code.at(-1))-1);return;}
  if(e.code==='KeyE')cycle(1);if(e.code==='KeyQ')cycle(-1);
@@ -425,10 +447,22 @@ function renderReading(){
 }
 function semanticElement(element){const el=element?.closest?.('[data-word]');return el?{id:'menu:'+el.dataset.word,key:el.dataset.word,picture:el.dataset.picture,icon:el.dataset.icon}:null;}
 function setupReadingEvents(){
- document.addEventListener('pointermove',e=>{if(!(e.movementX||e.movementY))return;menuReading=semanticElement(e.target);if(menuReading||!locked){currentReading=menuReading;renderReading();}});
- document.addEventListener('mouseleave',()=>{menuReading=currentReading=null;renderReading();});
- document.addEventListener('focusin',e=>{menuReading=semanticElement(e.target);if(menuReading||!locked){currentReading=menuReading;renderReading();}});
+ let modality='focus',pointer=null,scrollFrame=0;
+ const read=element=>{menuReading=semanticElement(element);if(menuReading||!locked){currentReading=menuReading;renderReading();}};
+ document.addEventListener('pointermove',e=>{if(!(e.movementX||e.movementY))return;modality='pointer';pointer={x:e.clientX,y:e.clientY};read(e.target);});
+ document.addEventListener('mouseleave',()=>{pointer=null;menuReading=currentReading=null;renderReading();});
+ document.addEventListener('pointerdown',e=>{modality='pointer';pointer={x:e.clientX,y:e.clientY};},true);
+ document.addEventListener('keydown',()=>{modality='focus';},true);
+ document.addEventListener('focusin',e=>read(e.target));
  document.addEventListener('focusout',e=>{menuReading=semanticElement(e.relatedTarget);if(!locked){currentReading=menuReading;renderReading();}});
+ $('catalogBody').addEventListener('wheel',e=>{modality='pointer';pointer={x:e.clientX,y:e.clientY};},{passive:true});
+ $('catalogBody').addEventListener('scroll',()=>{
+  if(scrollFrame)return;
+  scrollFrame=requestAnimationFrame(()=>{scrollFrame=0;
+   // Scrolling changes what is under a stationary pointer; it must not resurrect the old card.
+   if(!locked&&!$('catalog').hidden&&modality==='pointer'&&pointer)read(document.elementFromPoint(pointer.x,pointer.y));
+  });
+ },{passive:true});
 }
 function updateReading(now){
  if(!locked||menuReading){currentReading=menuReading;renderReading();return;}
@@ -487,18 +521,18 @@ function setupLocaleUI(){
 }
 function localizeUI(refresh=true){
  const active=document.activeElement,focusId=active?.id,focusData=['seed','piece','material','outfit','toy'].find(k=>active?.dataset[k]!==undefined),focusValue=focusData&&active.dataset[focusData];
- const scroll=$('catalog').scrollTop,wardrobeScroll=$('wardrobe').scrollTop;
+ const scroll=$('catalogBody').scrollTop,wardrobeScroll=$('wardrobe').scrollTop;
  document.documentElement.lang=i18n.language;document.title=t('ui.title');
  document.querySelectorAll('[data-i18n]').forEach(el=>el.textContent=t(el.dataset.i18n));
  document.querySelectorAll('[data-i18n-aria]').forEach(el=>el.setAttribute('aria-label',t(el.dataset.i18nAria)));
  document.querySelectorAll('.languageSelect').forEach(el=>{el.value=i18n.language;el.setAttribute('aria-label',t('language.label'));});
- $('welcomeControls').textContent=['walk','look','jump','choose','hold','book'].map(k=>t('control.'+k)).join(' · ');
- $('controlFooter').textContent=['walk','look','jump','run','choose','book','pause'].map(k=>t('control.'+k)).join(' · ');
+ $('welcomeControls').textContent=['walk','look','jump','choose','hold','build','book'].map(k=>t('control.'+k)).join(' · ');
+ $('controlFooter').textContent=['walk','look','jump','run','choose','build','book','pause'].map(k=>t('control.'+k)).join(' · ');
  if(loadWarning)$('welcomeSave').textContent=t(loadWarning);
  saveStatus(saveStatusKey);renderReward();if(lastToast)$('toast').textContent=i18n.message(lastToast);
  if(refresh){setupPictures();setupLivingUI();updateHUD();if(!$('catalog').hidden)renderCatalog();if(outfitResident!==null)openWardrobe(outfitResident);swimHudMode=null;pick();}
  const focus=focusId?$(focusId):focusData?document.querySelector(`[data-${focusData}="${focusValue}"]`):null;focus?.focus({preventScroll:true});
- $('catalog').scrollTop=scroll;$('wardrobe').scrollTop=wardrobeScroll;
+ $('catalogBody').scrollTop=scroll;$('wardrobe').scrollTop=wardrobeScroll;
  renderReading();
 }
 
