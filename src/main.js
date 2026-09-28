@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import {createWorld,createTree,animateTree,createBuildPiece,createTool} from './visuals.js';
-import {SAVE_KEY,SEEDS,PIECES,MATERIALS,cellKey,freshState,dig,plant,fill,water,tick,harvest,validateBuild,build,validateRemove,remove,serialize,deserialize} from './state.js';
+import {SAVE_KEY,SEEDS,PIECES,MATERIALS,cellKey,freshState,validateDig,dig,plant,fill,water,tick,harvest,validateBuild,build,validateRemove,remove,serialize,deserialize} from './state.js';
 import {WILD_RESOURCES,PLACES} from './world-data.js';
 import {liveWild,activeObstacles,harvestWild,worldBlocked} from './state.js';
 import {advanceChop,wheelStep,farTargetHint} from './interaction.js';
@@ -363,7 +363,7 @@ function pick(){
  tileOutline.visible=!!target&&locked&&!target.outOfReach;if(target)tileOutline.position.set(target.gx*2,(target.baseY??0)+.035,target.gz*2);
  if(preview){preview.visible=!!target&&locked&&!target.outOfReach;if(target){const b=selectedBuild();preview.position.set(b.gx*2,(isToy()?b.baseY:baseOf(b)+b.level*2.4),b.gz*2);preview.rotation.y=b.rotation*Math.PI/2;const valid=placementResult(b).ok;preview.traverse(o=>{if(o.isMesh)o.material.color.set(valid?'#d8f5a5':'#f49471');});}}
  if(connectionGhost){connectionGhost.visible=!!target&&locked&&!target.outOfReach;if(target){const b=selectedBuild(),[dx,dz]=rotateXZ(2,0,b.rotation);connectionGhost.position.set(b.gx*2+dx,b.baseY,b.gz*2+dz);connectionGhost.rotation.y=b.rotation*Math.PI/2;}}
- const removalCheck=tool===6?removalResult():null;
+ const removalCheck=tool===6?removalResult():null, digCheck=tool===0&&target&&!target.wildId&&!target.propId&&!state.plots[cellKey(target.gx,target.gz)]?validateDig(state,target.gx,target.gz):null;
  let label='';if(target&&locked){const p=state.plots[cellKey(target.gx,target.gz)];
   if(target.outOfReach)label=t(farTargetHint(target,state.plots,camera.position.y));
   else if(target.wildId){const r=WILD_RESOURCES.find(r=>r.id===target.wildId);label=tool===4?t(isFlower(r.kind)?'target.gatherFlowers':'target.chop'):t('target.wild',{noun:t('tree.'+r.kind)});}
@@ -372,15 +372,15 @@ function pick(){
   else if(tool===6)label=removalCheck.ok?t('target.remove'):i18n.message(removalCheck);
   else if(target.propId){const q=state.delights.find(p=>p.id===target.propId);label=toyHint(q);}
   else if(p?.seed)label=t('tree.'+p.seed)+' · '+(p.phase==='hole'?t('target.seed'):p.growth>=1?t('target.ready'):t('target.progress',{growth:Math.floor(p.growth*100),water:Math.round(p.water*100)}))+(p.phase==='filled'&&p.growth<1?'\n'+t(p.water<.2?'target.needsWater':'target.growing'):'');
-  else label=p?.phase==='hole'?t('target.hole'):tool===0?t('target.dig'):tool===1?t('target.digFirst'):'';
- }$('targetLabel').textContent=label;updateTargetCue(removalCheck);
+  else label=p?.phase==='hole'?t('target.hole'):tool===0?(digCheck.ok?t('target.dig'):i18n.message(digCheck)):tool===1?t('target.digFirst'):'';
+ }$('targetLabel').textContent=label;updateTargetCue(removalCheck,digCheck);
 }
-function updateTargetCue(removalCheck){
+function updateTargetCue(removalCheck,digCheck){
  const p=target&&state.plots[cellKey(target.gx,target.gz)],r=target?.wildId&&WILD_RESOURCES.find(r=>r.id===target.wildId);
  let stage=r?5:stageFor(p),name=steps[stage][0],required=steps[stage][1],progress=stage===4?(p?.growth??0)*100:0,wrong=false,blocked=false;
  if(tool===5){name='build';required=5;blocked=target&&!placementResult(selectedBuild()).ok;}
  else if(tool===6){name='remove';required=6;blocked=!removalCheck.ok;}
- else if(tool===0&&target&&!target.wildId)blocked=worldBlocked(state,target.gx,target.gz);
+ else if(tool===0&&digCheck)blocked=!digCheck.ok;
  if(stage===5){name=isFlower(r?.kind)||isFlower(p?.seed)?'hand':'axe';if(chopProgress)progress=chopProgress*100;}
  if(tool===3&&p?.seed&&p.phase==='filled'&&p.growth<1){name='hose';required=3;progress=p.water*100;}
  if(target?.outOfReach){name=farTargetHint(target,state.plots,camera.position.y)==='target.lookDown'?'lookDown':'footsteps';required=null;}

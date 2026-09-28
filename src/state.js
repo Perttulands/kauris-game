@@ -50,15 +50,19 @@ export function harvestWild(s,id){
  const spec=SEEDS[r.kind];s.wildRemoved.push(id);s.inventory[spec.resource]+=spec.yield;s.stats.harvested++;
  return ok('message.yield',{count:spec.yield,material:spec.resource},{resource:spec.resource,amount:spec.yield});
 }
-export function dig(s,gx,gz){
+export function validateDig(s,gx,gz){
  if(!validCell(gx,gz))return no('message.insideMeadow');
  if(s.delights?.some(p=>p.gx===gx&&p.gz===gz&&p.hostId===null&&p.baseY===0))return no('message.removeToy');
  if(worldBlocked(s,gx,gz))return no('message.clearWild');
  if(s.buildings.some(b=>!wallLike(b)&&b.gx===gx&&b.gz===gz&&baseOf(b)===0))return no('message.removeBuilding');
- const k=cellKey(gx,gz),p=s.plots[k];
+ const p=s.plots[cellKey(gx,gz)];
  if(p?.growth>0)return no('message.matureAxe');
  if(p?.phase==='hole'&&!p.seed)return no('message.holeReady');
- s.plots[k]={gx,gz,phase:'hole',seed:null,growth:0,water:0};return ok('message.dug');
+ return ok('message.dug');
+}
+export function dig(s,gx,gz){
+ const check=validateDig(s,gx,gz);if(!check.ok)return check;
+ s.plots[cellKey(gx,gz)]={gx,gz,phase:'hole',seed:null,growth:0,water:0};return check;
 }
 export function plant(s,gx,gz,seed){
  const p=s.plots[cellKey(gx,gz)];

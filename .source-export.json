@@ -1,5 +1,5 @@
 {
-  "sourceCommit": "2d70dad141b094986d21d508c9491da6fa624663",
+  "sourceCommit": "8d4de98054e6d381ce86d9a9de0ff657a17eee00",
   "files": [
     ".gitignore",
     "HOSTING.md",
@@ -88,8 +88,8 @@
     "src/i18n.js": "7d0e6fdffaf8de96fb391e4d23c1092173990f6320c9c334561fc9dc0f02f141",
     "src/icons.js": "967d4c11abe028c67a0e7c690cb63cc798cdfce2183d8ab6619fcd3d02cde6ff",
     "src/interaction.js": "0511b060833e7d0502e31039c74f9bdb395b4e033761e1d5af8732c18af93d7a",
-    "src/locale-data.js": "af0ae47b0c7304770273f7155188ca9c1cb6347ae39d30bdad4018b7c663963c",
-    "src/main.js": "da9cc2236e666d5f4d45926a82267cd21b2d9ed6c719829f893843463252e746",
+    "src/locale-data.js": "15b1b70c21986d424a5fff751d97dc7d3304eded3a384f8200c06cc5f674587d",
+    "src/main.js": "1b5f5ec49f75c229a00c90021c5bc8c49a93ed19f42246da3ff7b7caa440ad07",
     "src/marine-visuals.js": "8eb734b0cabd70573a829daed8cf8b956e67489822c8d654079bdf447fd76e73",
     "src/marine.js": "1ce285317766d151350eb15b9d2d43182c3c77929296bb79f8a1894d96023199",
     "src/meadow-visuals.js": "cf0b8163fa882bc7c3ac2141847a844351e887a01735600fcafe7740bee0db35",
@@ -101,7 +101,7 @@
     "src/reef-collision.js": "4d56be277c6df9daf3c4eca04b43d15c9dddd5d8dec3c28a4f35d9d74335a38c",
     "src/resident-runtime.js": "f42004bfa235f40fb6b578d8c2636009fdd3206df4703558de557546b595759c",
     "src/residents.js": "07bd9d65dd21234575e968bdb61feea3fe7d862547250bc284a9e755397de7ee",
-    "src/state.js": "6f7a8675e9645ab4da7c74e9b2fcdb940b1eedccab2b2626bf9ebe5d68325342",
+    "src/state.js": "c271432a21ba45f5aee3e92af18907fe93684ca4f35f0c2d8b190b3798271c24",
     "src/terrain.js": "54419310760c74dcf6846f3ccf3a348291e090b5d871875be1c563a2ae9c471a",
     "src/ui.css": "23ea7f1c8ea78090a8e8c220cd53e0a5d6cd2a58cd91e5d922639d17dd3a8c82",
     "src/visuals.js": "99a7244f6d3315bd275f6e8a5094f8fa6d321d70d8c1bf05ce1d520772482050",
@@ -122,6 +122,6 @@
     "tests/rotation.test.js": "c84f9b43fbf015922dc3a76bbf27274bf4ead1c4e7e6b3c39ce156fc127184a2",
     "tests/round1.test.js": "ce4301659f28b67f64d4fecd7c354330362032c31e5e40df6b14399727713cbb",
     "tests/state.test.js": "6cb1a2ad9c9c521615fee68d9d0b8d9bca9a73ee79a0d4b0f3643ce16a0674f4",
-    "tests/ui-guidance.test.js": "4ee798ca75e380bed5042e7e48163b3a26e2858e0b57fb3743e9707d0875aaf3"
+    "tests/ui-guidance.test.js": "1d862fd5ce27a19d2504f827d79d92df907ae91c493fed2a4c7538a9168583c2"
   }
 }
