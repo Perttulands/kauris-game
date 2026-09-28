@@ -9,6 +9,9 @@ http://:{$KAURI_PORT:4180} {
 	route {
 		header Cache-Control "no-cache"
 		header X-Content-Type-Options "nosniff"
+		# Content hashes, rather than archive timestamps, govern revalidation.
+		request_header -If-Modified-Since
+		header -Last-Modified
 		import {$KAURI_CACHE_CONFIG}
 		file_server {
 			precompressed br gzip

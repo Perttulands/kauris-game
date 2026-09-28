@@ -1,5 +1,5 @@
 {
-  "sourceCommit": "86d56c129d9e9a29f6b7fe8a39d6de2cc9b1267e",
+  "sourceCommit": "86e7ab352bed4edc790ce5473bb13ae91e751173",
   "files": [
     ".gitignore",
     "HOSTING.md",
@@ -61,16 +61,16 @@
   ],
   "sha256": {
     ".gitignore": "6eb7e50caffbe5bf9068af07b4756ddf66b99f586a5e1cc8a0553e3793c6cad9",
-    "HOSTING.md": "b2ffc6694699bd3251ff2dabbc313caac14da898461cbcd03597e344b0e712ad",
+    "HOSTING.md": "aff8e08458e051f4278eb5792dc30fe7160712d0d1b12204fabbcc8ff827be53",
     "README.md": "650392d63bcf98e4474e5e3176a072ff7d78d8d1887743d8b829267881343291",
-    "hosting/Caddyfile": "39cca8f1a7ea157ab60b8db95b9082f1b5fe88dfb533fde32094014fad072c20",
+    "hosting/Caddyfile": "b6187df2f9ee751b117361375aa368f0f401f15b4c4820b075bd3d695f3e817f",
     "hosting/kauris-static.service": "e2e74b87377621c92c8097b454b75e1945b59c6658f5538483f3d62714535d91",
     "index.html": "4030e020661e0bf88534ba467c9332be3c830d7478b9db4e05711eb06ea8fc8d",
     "package-lock.json": "77a2be02d13d03dfd66afbc87f6bac0f37eb838754599072443e76144b5c45bc",
     "package.json": "7d76db6632a810e428d5e8dab11a87dcf7bf910ffa6ad40c2ea9117c7a2e5458",
     "public/assets/landing/meadow-home.webp": "31a1c9670afc77a79c8bd75cccf848c469108dfcfd8b47fc44fec9615feb9071",
     "public/assets/orchard-windmill.glb": "3b21ffacf5ce09a02c48530f70aa9b8e45f12fdaf9c48344f71239ed7051d63e",
-    "scripts/package-static.mjs": "3b675b5c908c7579cbce3baef50f09c7a68e01087985502866dead8abf2150d2",
+    "scripts/package-static.mjs": "2fedd0c1f7dd89ae5264a1df59a29afa0423aedb0780160f86a2678c4ec526c4",
     "scripts/publish-source.py": "b0b96ee96970814fbb48c11a26df63a4c3cb874d5a3057743bca00b3ad081f2a",
     "src/audio.js": "6ed47eca587fe70c0591aaae97130396649cf41fe433e54abdf951974bcfe801",
     "src/building.js": "c475e4a9ec01cd4bbb7d4fc4054d93a1e0593f308a7b69112c6dd16a03bf1ca5",

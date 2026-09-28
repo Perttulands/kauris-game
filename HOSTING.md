@@ -18,7 +18,7 @@ The last command creates `artifacts/kauris-<content-id>/` containing:
 - `site/`: only `dist` files and beneficial Brotli/gzip sidecars.
 - `site.tar.gz` and its SHA-256 receipt: the same served files, ready to extract.
 - `manifest.json`: per-file hashes, raw/compressed bytes and total cold-load sizes, including the landing hero and windmill.
-- `cache.caddy`: the exact hashed JS/CSS entry paths allowed to cache immutably.
+- `cache.caddy`: content-hash ETags for every file and the exact hashed JS/CSS entry paths allowed to cache immutably.
 
 Serve only `site/`, never the repository or the metadata directory. The packager rejects symlinks and unexpected build files. Repeating packaging of identical output preserves the same content ID and archive. Keep the manifest and cache fragment alongside the release, outside its web root.
 
@@ -38,7 +38,7 @@ caddy run --config hosting/Caddyfile --adapter caddyfile
 
 Open `http://127.0.0.1:4180` in an isolated browser profile. Verify the landing, Play/Continue, language selection, pause and reload. The normal local development save is on a different origin and must remain untouched. Stop this foreground staging process with Ctrl-C.
 
-HTML and stable filenames, including the hero and `orchard-windmill.glb`, use `Cache-Control: no-cache` so clients revalidate. Only the manifest's hashed JS/CSS paths use a year of immutable caching. Caddy negotiates [precompressed sidecars](https://caddyserver.com/docs/caddyfile/directives/file_server); missing assets return 404, with no application fallback or directory listing.
+HTML and stable filenames, including the hero and `orchard-windmill.glb`, use `Cache-Control: no-cache` so clients revalidate. Only the manifest's hashed JS/CSS paths use a year of immutable caching. Content-hash ETags remain valid after extracting the reproducible archive, whose file timestamps are fixed. Caddy negotiates [precompressed sidecars](https://caddyserver.com/docs/caddyfile/directives/file_server); missing assets return 404, with no application fallback or directory listing.
 
 Before release, check actual HTTP responses: Brotli/gzip body hashes against the manifest, correct MIME types, `Vary: Accept-Encoding`, HTML/hero/model revalidation, hashed-entry immutable caching, conditional 304 and missing-file 404. Test the packaged site, not Vite's development or preview server.
 
