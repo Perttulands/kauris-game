@@ -1,0 +1,7 @@
+export const SETTINGS_KEY='kauris-display-v1';
+export const TIERS=Object.freeze([{name:'low',dpr:1,shadow:0,decor:.72},{name:'balanced',dpr:1.25,shadow:1024,decor:.88},{name:'high',dpr:1.6,shadow:2048,decor:1}]);
+export function readDisplay(storage){try{const s=JSON.parse(storage?.getItem(SETTINGS_KEY)??'null');return {mode:['auto','high','low'].includes(s?.mode)?s.mode:'auto',comfort:s?.comfort===true};}catch{return {mode:'auto',comfort:false};}}
+export function createQuality(settings){let tier=settings.mode==='high'?2:settings.mode==='low'?0:1,lastChange=-Infinity,start=null,samples=[],bad=0,goodSince=null;
+ return {get tier(){return TIERS[tier];},reset(){start=null;samples=[];bad=0;goodSince=null;},set(mode){settings.mode=mode;tier=mode==='high'?2:mode==='low'?0:1;this.reset();return this.tier;},sample(ms,now,active){if(!active||!Number.isFinite(ms)||ms<=0||ms>250){this.reset();return false;}if(settings.mode!=='auto')return false;start??=now;samples.push(ms);if(now-start<2000)return false;const sorted=samples.sort((a,b)=>a-b),p95=sorted[Math.floor((sorted.length-1)*.95)];samples=[];start=now;if(p95>28){bad++;goodSince=null;}else{bad=0;if(p95<18)goodSince??=now;else goodSince=null;}if(now-lastChange<10000)return false;const next=bad>=2?Math.max(0,tier-1):goodSince!==null&&now-goodSince>=15000?Math.min(2,tier+1):tier;if(next===tier)return false;tier=next;lastChange=now;bad=0;goodSince=null;return true;}};
+}
+export function frameDelta(now,previous,active){return active&&previous!==null?Math.max(0,Math.min(.1,(now-previous)/1000)):0;}

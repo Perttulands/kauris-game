@@ -24,7 +24,7 @@ def run(*cmd,cwd=source,capture=True):
 revision=run('git','rev-parse',args.revision+'^{commit}')
 output=args.output.resolve()
 if output==source or source in output.parents:raise SystemExit('Export must be a separate checkout outside source.')
-allow={'README.md','package.json','package-lock.json','index.html','scripts/publish-source.py','scripts/package-static.mjs','HOSTING.md','hosting/Caddyfile','hosting/kauris-static.service'}
+allow={'README.md','package.json','package-lock.json','index.html','scripts/publish-source.py','scripts/package-static.mjs','HOSTING.md','hosting/Caddyfile','hosting/kauris-static.service','src/catalogue-manifest.json','scripts/bake-catalogue.mjs','scripts/catalogue-render.js'}
 paths=run('git','ls-tree','-r','--name-only',revision).splitlines()
 def allowed(p):
  return p in allow or (p.startswith('src/') and Path(p).suffix in ('.js','.css')) or (p.startswith('tests/') and p.endswith('.test.js')) or (p.startswith('public/assets/') and Path(p).suffix in ('.glb','.png','.jpg','.webp','.svg','.ogg','.wav','.mp3'))

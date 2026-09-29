@@ -43,6 +43,7 @@ Your world is saved automatically in this browser. Use the same browser and site
 | Resume | Play triangle or paused background |
 | Neighbour clothes | Shirt picture or F nearby |
 | Sound | Speaker button |
+| Return home | Hold H or use the pause menu |
 | Read a menu picture's name | Hover or focus with Tab / Shift-Tab |
 
 Tab and arrow keys navigate normally inside menus. Menus pause the world, and their contents can be scrolled. Plain walls have two placement directions; other pieces have four.
@@ -54,6 +55,10 @@ Dig a hole, choose a seed, plant it, fill the soil and water it. Watered plants 
 Open **Build** to choose materials, building pieces and objects. Aim near the edge where you want a wall, window or door. Add a roof one level above the walls. A home with enclosed sides, a doorway and a roof welcomes a neighbour; underwater homes welcome divers. Remove upper pieces before their supports. Removing a piece returns its material cost.
 
 Aim at a nearby object and click the pictured hand to use it. Pour into a water channel with the watering can, place a wheel beside its spout and a bell nearby. Push a hammock, switch on a crystal lamp beside a curtain, or ride a lift. Lower an occupied lift before removing it.
+
+Hold **H** while playing to return home, or use **Return home** in the pause menu. Your first completed house on dry land becomes home; **Make this my home** chooses another nearby completed house.
+
+The pause menu also has graphics settings and a calmer camera option. Automatic graphics adjusts picture quality to the device; Low reduces shadows and power use. Calmer camera slows looking and removes the walking tool bob.
 
 ## Explore
 

@@ -1,3 +1,4 @@
+import {readHome} from './home.js';
 import {activeDiscoveries,seedUnlocked,plantVariation,readGarden} from './garden.js';
 import {reconcileResidents,readResidents} from './residents.js';
 import {edgeKey,wallLike,baseOf,adjacentCells} from './building.js';
@@ -155,6 +156,7 @@ export function deserialize(raw){
   ids.add(b.id);s.buildings.push({id:b.id,gx:b.gx,gz:b.gz,kind:b.kind,material:b.material,level:b.level,rotation:b.rotation,baseY:baseOf(b),cost:b.cost});
  }
  s.nextId=Math.max(0,...ids)+1;
+ const home=readHome(d.home);if(home)s.home=home;
  s.delights=readDelights(d.delights,s);
  const nextToy=Math.max(0,...s.delights.map(p=>p.id))+1;if(d.nextDelightId!==undefined&&(!Number.isSafeInteger(d.nextDelightId)||d.nextDelightId<nextToy))throw Error('Invalid toy sequence');s.nextDelightId=d.nextDelightId??nextToy;
  const p=d.player;
