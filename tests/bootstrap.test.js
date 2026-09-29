@@ -38,3 +38,15 @@ test('bootstrap completion preserves runtime locale handlers and queued Play',as
  }
  assert.equal(changes,6);
 });
+
+for(const saved of [false,true])test(`failed bootstrap keeps Retry after locale changes (saved=${saved})`,async()=>{
+ const values=new Map(saved?[['kauris-meadow-v1','unchanged paid world']]:[]),storage={getItem:k=>values.get(k),setItem:(k,v)=>values.set(k,v)},elements=new Map(),tasks=[];let reloads=0;
+ const get=id=>{if(!elements.has(id))elements.set(id,{value:'',dataset:{},attributes:{},textContent:'',innerHTML:'',setAttribute(k,v){this.attributes[k]=v;},click(){this.onclick?.();}});return elements.get(id);},selectors=[get('welcomeLanguage'),get('bookLanguage')];
+ const document={documentElement:{lang:''},getElementById:get,querySelectorAll:s=>s==='.languageSelect'?selectors:[]},window={};
+ const source=readFileSync(new URL('../src/bootstrap.js',import.meta.url),'utf8').replace(/^import .*;\n/gm,'').replace("import('./main.js')","Promise.reject(new Error('controlled WebGL creation failure'))");
+ vm.runInNewContext(source,{window,document,localStorage:storage,navigator:{languages:['en']},createI18n,LANGUAGES,icon:()=>'',requestAnimationFrame:f=>tasks.push(f),setTimeout:f=>tasks.push(f),queueMicrotask,performance:{now:()=>0},location:{reload:()=>reloads++},console:{error(){}}});
+ while(tasks.length)await tasks.shift()();await Promise.resolve();
+ const check=()=>{const ui=window.kaurisBoot.i18n,retry=ui.t('boot.retry');assert.equal(get('start').innerHTML,`<span>${retry}</span>`);assert.equal(get('start').attributes['aria-label'],retry);assert.equal(get('bootStatus').textContent,ui.t('boot.failed'));assert.equal(values.get('kauris-meadow-v1'),saved?'unchanged paid world':undefined);assert.equal(window.kaurisBoot.ready,false);};
+ check();for(const select of selectors)for(const lang of ['fi','sv','en']){select.value=lang;select.onchange();assert.equal(window.kaurisBoot.i18n.language,lang);check();}
+ get('start').click();assert.equal(reloads,1);assert.equal(get('pauseBuild').disabled,true);assert.equal(get('pauseJournal').disabled,true);
+});
