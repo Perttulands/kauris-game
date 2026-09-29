@@ -31,8 +31,7 @@ export function propBoxes(p,{reserve=false,envelope=false,liftY=p.liftY??0}={}){
 }
 export const boxesOverlap=(a,b,margin=0)=>a.minX<b.maxX-margin&&a.maxX>b.minX+margin&&a.minZ<b.maxZ-margin&&a.maxZ>b.minZ+margin&&a.minY<b.maxY-margin&&a.maxY>b.minY+margin;
 export function naturalPropBase(kind,gx,gz){
- const base=buildBase(gx,gz);if(base!==null)return base;
- return ['crabShelter','bell'].includes(kind)&&Number.isInteger(gx)&&Math.abs(gx)<=6&&[20,21].includes(gz)?terrainHeight(gx*2,gz*2):null;
+ return buildBase(gx,gz);
 }
 export function propSupport(s,kind,gx,gz,hostId=null){
  if(hostId!==null){const floor=s.buildings.find(b=>b.id===hostId&&b.kind==='floor'&&b.gx===gx&&b.gz===gz);return floor&&kind!=='lift'?baseOf(floor)+floor.level*2.4+.15:null;}
@@ -41,7 +40,7 @@ export function propSupport(s,kind,gx,gz,hostId=null){
 const result=(ok,code,params={},extra={})=>({ok,code,params,...extra});
 const no=code=>result(false,code);
 function blockedNatural(s,p){
- if(p.baseY!==0||p.hostId!==null)return false;
+ if(p.hostId!==null)return false;
  const footprint=cellFootprint(p.gx,p.gz);
  return activeDiscoveries(s).some(d=>overlaps(footprint,d.bounds))||nearbyResources(s,(footprint.minX+footprint.maxX)/2,(footprint.minZ+footprint.maxZ)/2,5).some(r=>overlaps(footprint,wildFootprint(r)))||localSolidBounds((footprint.minX+footprint.maxX)/2,(footprint.minZ+footprint.maxZ)/2,5).some(o=>overlaps(footprint,o))||WORLD_OBSTACLES.some(o=>!s.worldHidden?.includes(o.id)&&overlaps(footprint,o));
 }
@@ -50,8 +49,8 @@ export function validateDelight(s,p,{legacy=false}={}){
  if((s.delights?.length??0)>=80)return no('message.toyLimit');
  if(propSupport(s,p.kind,p.gx,p.gz,p.hostId??null)!==p.baseY)return no('message.toySupport');
  if(p.kind==='birdhouse'&&p.baseY<TERRAIN.waterY)return no('message.birdDry');
- // A shelter belongs on the real flat cove shelf, not an unreachable meadow site.
- if(p.kind==='crabShelter'&&!(p.hostId==null&&Math.abs(p.gx)<=6&&[20,21].includes(p.gz)))return no('message.crabShore');
+ // A shelter needs actual shallow seabed, independent of authored place names.
+ if(p.kind==='crabShelter'&&!(p.hostId==null&&p.baseY<TERRAIN.waterY&&p.baseY>=TERRAIN.waterY-3))return no('message.crabShore');
  if(!legacy&&blockedNatural(s,{...p,hostId:p.hostId??null}))return no('message.clearWild');
  if(p.hostId==null&&s.plots?.[`${p.gx},${p.gz}`])return no('message.clearGround');
  const volume=propBoxes(p,{reserve:true});

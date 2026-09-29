@@ -25,3 +25,9 @@ test('diver corridor uses home elevation for every stand check and model floor o
  for(let i=0;i<100;i++)sys.update(.1,i*.1);
  assert.equal(s.residents[0].status,'home');assert.equal(s.residents[0].habitat,'ocean');assert.ok(heights.length>10&&heights.every(y=>y===-7.2));assert.equal(sys.models.get(s.residents[0].id).position.y,-7.05);
 });
+test('sampled seabed resident receives visible diving gear and suit, not just an ocean label',()=>{
+ const s={buildings:house(0).map(b=>({...b,baseY:-7.5})),residents:[]};reconcileResidents(s);
+ const sys=createResidentSystem({scene:new THREE.Scene(),getState:()=>s,canStand:()=>true,floorHeight:()=>-7.35,notice:()=>{},changed:()=>{}});sys.sync();const model=sys.models.get(s.residents[0].id);
+ assert.equal(model.name,'reef-diver');assert.equal(model.userData.diver,true);assert.ok(model.getObjectByName('diver-helmet')?.visible);assert.ok(model.getObjectByName('diver-pack-and-straps')?.visible);
+ const bounds=new THREE.Box3().setFromObject(model.getObjectByName('diver-helmet'));assert.ok(bounds.max.y<1.7);assert.ok(bounds.max.x<=.31&&bounds.min.x>=-.31);
+});

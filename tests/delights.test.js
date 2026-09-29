@@ -9,7 +9,7 @@ const rich=()=>{const s=freshState();for(const k of Object.keys(s.inventory))s.i
 test('all five materials retain exact house costs; paid toys refund once and reject unaffordable/duplicate use',()=>{
  assert.deepEqual(MATERIALS,['wood','copper','iron','diamond','fiber']);const s=freshState();
  assert.equal(placeDelight(s,toy('lamp')).ok,false);assert.equal(s.delights.length,0);
- for(const kind of Object.keys(DELIGHTS)){const r=rich(),spec=DELIGHTS[kind],p=kind==='crabShelter'?toy(kind,3,20,0,-7.2):toy(kind);const before=r.inventory[spec.material];const out=placeDelight(r,p);assert.ok(out.ok,kind);assert.equal(r.inventory[spec.material],before-spec.cost);assert.equal(placeDelight(r,p).ok,false);assert.equal(removeDelight(r,out.prop.id).ok,true);assert.equal(r.inventory[spec.material],before);assert.equal(removeDelight(r,out.prop.id).ok,false);}
+ for(const kind of Object.keys(DELIGHTS)){const r=rich(),spec=DELIGHTS[kind],p=kind==='crabShelter'?toy(kind,0,19,0,terrainHeight(0,38)):toy(kind);const before=r.inventory[spec.material];const out=placeDelight(r,p);assert.ok(out.ok,kind);assert.equal(r.inventory[spec.material],before-spec.cost);assert.equal(placeDelight(r,p).ok,false);assert.equal(removeDelight(r,out.prop.id).ok,true);assert.equal(r.inventory[spec.material],before);assert.equal(removeDelight(r,out.prop.id).ok,false);}
  const f=rich();assert.ok(build(f,floor(0,0,'fiber')).ok);assert.equal(f.inventory.fiber,98);
 });
 test('old version1 paid world preserved; validated optional props support raised hosts and reject accounting tampering',()=>{
@@ -20,8 +20,8 @@ test('old version1 paid world preserved; validated optional props support raised
 });
 test('natural toys reserve paid construction/dig and shelter has a reachable flat real cavity',()=>{
  const s=rich();const p=placeDelight(s,toy('birdhouse')).prop;assert.equal(dig(s,0,0).ok,false);assert.equal(build(s,floor(0,0)).ok,false);
- assert.equal(validateDelight(s,toy('crabShelter',1,0)).ok,false);const hut=placeDelight(s,toy('crabShelter',3,20,0,-7.2));assert.ok(hut.ok);const b=propBoxes(hut.prop);const center=propAnchor(hut.prop,'inside');assert.equal(terrainHeight(center.x,center.z),-7.2);assert.ok(b.every(a=>!(center.x+.72>a.minX&&center.x-.72<a.maxX&&center.z+.72>a.minZ&&center.z-.72<a.maxZ&&center.y+.45>a.minY)));
- const approach=propAnchor(hut.prop,'entry');assert.equal(terrainHeight(approach.x,approach.z),-7.2);assert.ok(inWorld(approach.x,approach.z));assert.ok(removeDelight(s,p.id).ok);
+ assert.equal(validateDelight(s,toy('crabShelter',1,0)).ok,false);const hut=placeDelight(s,toy('crabShelter',0,19,0,terrainHeight(0,38)));assert.ok(hut.ok);const b=propBoxes(hut.prop);const center=propAnchor(hut.prop,'inside');assert.equal(terrainHeight(center.x,center.z),hut.prop.baseY);assert.ok(b.every(a=>!(center.x+.72>a.minX&&center.x-.72<a.maxX&&center.z+.72>a.minZ&&center.z-.72<a.maxZ&&center.y+.45>a.minY)));
+ const approach=propAnchor(hut.prop,'entry');assert.ok(Math.abs(terrainHeight(approach.x,approach.z)-hut.prop.baseY)<=.3);assert.ok(inWorld(approach.x,approach.z));assert.ok(removeDelight(s,p.id).ok);
 });
 test('water ports connect only directed same-height adjacent placements on either axis; isolated pieces valid',()=>{
  for(let rotation=0;rotation<4;rotation++){const s=rich(),g=placeDelight(s,toy('gutter',0,0,rotation)).prop,ends=[[1,0],[0,-1],[-1,0],[0,1]][rotation],w=placeDelight(s,toy('waterWheel',...ends,rotation)).prop;assert.equal(connectedWheel(g,s.delights).id,w.id);assert.equal(connectedWheel(g,[{...w,rotation:(rotation+1)%4}]),null);assert.equal(connectedWheel(g,[{...w,baseY:1}]),null);assert.equal(connectedWheel(g,[]),null);}
@@ -35,7 +35,7 @@ test('lift moves both slab faces and actual riders; headroom/nonrider stop, supp
 });
 test('mid-height lift and supported saved player reload exactly; deep offshore save uses shared floor/bounds',()=>{
  const s=rich(),p=placeDelight(s,toy('lift')).prop;p.liftY=1.27;s.player={x:0,z:0,y:1.42,yaw:0,pitch:0};const d=deserialize(serialize(s));assert.equal(d.delights[0].liftY,1.27);assert.equal(d.player.y,1.42);assert.equal(propFloor(d.delights,0,0,d.player.y,0),1.42);
- s.player={x:0,z:100,y:-12,yaw:0,pitch:0};assert.equal(terrainHeight(0,100),-14);assert.equal(deserialize(serialize(s)).player.y,-12);assert.ok(inWorld(20,106));assert.equal(terrainHeight(0,60),-7.2);assert.equal(TERRAIN.maxZ,112);
+ const y=terrainHeight(0,100)+1;s.player={x:0,z:100,y,yaw:0,pitch:0};assert.equal(deserialize(serialize(s)).player.y,y);assert.ok(inWorld(20,106));
 });
 
 test('small hosted lamp and curtain fit a complete room while large hammock respects walls; IDs never recycle',()=>{

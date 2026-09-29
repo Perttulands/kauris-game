@@ -130,9 +130,9 @@ export function createStagedTree(kind,{variation=0}={}){
       const bough=(x,y,z,r=.07)=>{const root=[.025,y-.75*tall,0],elbow=[x*.42,y-.32*tall,z*.45];branches.beam(bark,root,elbow,r);branches.beam(bark,elbow,[x,y,z],r*.57);attach(x,y,z);};
       if(kind==='pine'){
         for(let row=0;row<6;row++)for(let j=0;j<5;j++){
-          const a=j*1.256+row*.44+phase,r=1.12-row*.145,y=(1.8+row*.69)*tall,x=Math.cos(a)*r*.64,z=Math.sin(a)*r*.64;
+          const a=j*1.256+row*.44+phase,r=1.12-row*.145,y=(2.95+row*.46)*tall,x=Math.cos(a)*r*.64,z=Math.sin(a)*r*.64;
           if(j===0){
-            // Overlapping inner needle skirts restore the evergreen taper behind fine boughs.
+            // Retain the tapered skirts above walking eye height, including small wild trees.
             attach(lean*.4,y,0);
             crown.add('cone','pine',lean*.4,y+.30*tall,0,r*.88,(1.50-row*.055)*tall,r*.88,0,phase+row*.2);
           }

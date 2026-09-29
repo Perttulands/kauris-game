@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import {terrainHeight} from './terrain.js';
 import {createDiscovery,animateDiscovery,createAnimal,animateAnimal} from './garden-visuals.js';
 import {activeDiscoveries,discover,gardenAttractors} from './garden.js';
 export function createGardenSystem({scene,getState,getPlayer,canStand,treeHeight=()=>3.5,onDiscover,getDelights=()=>null,flyClear=()=>true}){
@@ -30,30 +31,36 @@ export function createGardenSystem({scene,getState,getPlayer,canStand,treeHeight
   for(const a of animals){
    if(visitBirdhouse(a,dt,time))continue;
    const list=['butterfly','bee'].includes(a.kind)?attraction.flowers:a.kind==='bird'?attraction.trees:attraction.leafy;
-   const p=list[['butterfly','bee','grub'].includes(a.kind)?Math.floor(a.index/(a.kind==='butterfly'?6:3)):a.index];
-   if(!p){a.model.visible=false;a.at=null;continue;}
+   const current=list.find(p=>a.at===`${p.gx},${p.gz}`),near=p=>p&&Math.hypot(p.gx*2-player.x,p.gz*2-player.z)<48;
+   let p=near(current)?current:null;
+   // A nearby visitor stays with its patch, even if another plot becomes nearer.
+   // Harvested habitat leaves a local resting/flight anchor until out of view.
+   if(!p&&a.model.visible&&near(a.lastPlot))p={...a.lastPlot,retired:true};
+   if(!p)p=list[['butterfly','bee','grub'].includes(a.kind)?Math.floor(a.index/(a.kind==='butterfly'?6:3)):a.index];
+   if(!p){a.model.visible=false;a.at=null;continue;}if(!p.retired)a.lastPlot={...p};
    const key=`${p.gx},${p.gz}`,baseX=p.gx*2,baseZ=p.gz*2,t=time+a.index*2.7;
    let x,z,y,walk=0,perch=0;
-   if(a.kind==='butterfly'){x=baseX+Math.cos(t*1.3)*(.6+a.index%3*.2);z=baseZ+Math.sin(t*.94)*.8;y=.65+Math.sin(t*2)*.2;walk=1;}
-   else if(a.kind==='bee'){x=baseX+Math.cos(t*1.1)*.65;z=baseZ+Math.sin(t*1.4)*.6;y=.5+Math.sin(t*.9)*.14;walk=1;}
-   else if(a.kind==='grub'){x=baseX+Math.cos(t*.12+a.index)*1.3;z=baseZ+Math.sin(t*.12+a.index)*1.3;y=.018;walk=1;if(!canStand(x,z)){a.model.visible=false;continue;}}
+   if(a.kind==='butterfly'){x=baseX+Math.cos(t*1.3)*(.6+a.index%3*.2);z=baseZ+Math.sin(t*.94)*.8;y=p.baseY+.65+Math.sin(t*2)*.2;walk=1;}
+   else if(a.kind==='bee'){x=baseX+Math.cos(t*1.1)*.65;z=baseZ+Math.sin(t*1.4)*.6;y=p.baseY+.5+Math.sin(t*.9)*.14;walk=1;}
+   else if(a.kind==='grub'){x=baseX+Math.cos(t*.12+a.index)*1.3;z=baseZ+Math.sin(t*.12+a.index)*1.3;y=terrainHeight(x,z)+.018;walk=1;if(!canStand(x,z)){a.model.visible=false;continue;}}
    else if(a.kind==='bird'){
     // One closed flight cycle joins the same perch at both ends, without radius jumps.
     const phase=t%18,air=phase<7,ease=q=>q*q*(3-2*q);
     const blend=air?ease(Math.min(1,phase/1.25,(7-phase)/1.25)):0;
     const angle=5.6+Math.PI*2*ease(Math.min(1,phase/7)),radius=.25+1.55*blend;
-    x=baseX+Math.cos(angle)*radius;z=baseZ+Math.sin(angle)*radius;y=treeHeight(key)+blend*(.45+Math.sin(phase*Math.PI/7)*.15);walk=blend;perch=1-blend;
+    x=baseX+Math.cos(angle)*radius;z=baseZ+Math.sin(angle)*radius;y=p.retired?p.baseY+2.4+Math.sin(t*.4)*.2:treeHeight(key)+blend*(.45+Math.sin(phase*Math.PI/7)*.15);walk=p.retired?1:blend;perch=p.retired?0:1-blend;
    }else{
     const phase=Math.floor(t/7)%4,angle=a.index*2+phase*Math.PI/2,tx=baseX+Math.cos(angle)*2.3,tz=baseZ+Math.sin(angle)*2.3;
-    if(a.at!==key){const points=Array.from({length:12},(_,i)=>({x:baseX+Math.cos(i*Math.PI/6)*2.3,z:baseZ+Math.sin(i*Math.PI/6)*2.3}));const safe=points.find(p=>canStand(p.x,p.z));if(!safe){a.model.visible=false;continue;}a.model.position.set(safe.x,0,safe.z);}
-    x=a.model.position.x;z=a.model.position.z;y=0;const dx=tx-x,dz=tz-z,d=Math.hypot(dx,dz),step=Math.min(d,dt*.5),nx=x+dx/(d||1)*step,nz=z+dz/(d||1)*step;
-    if(d>.08&&canStand(nx,nz)){x=nx;z=nz;walk=1;}
+    if(a.at!==key){const points=Array.from({length:12},(_,i)=>({x:baseX+Math.cos(i*Math.PI/6)*2.3,z:baseZ+Math.sin(i*Math.PI/6)*2.3}));const safe=points.find(p=>canStand(p.x,p.z));if(!safe){a.model.visible=false;continue;}a.model.position.set(safe.x,terrainHeight(safe.x,safe.z),safe.z);}
+    x=a.model.position.x;z=a.model.position.z;y=terrainHeight(x,z);const dx=tx-x,dz=tz-z,d=Math.hypot(dx,dz),step=Math.min(d,dt*.5),nx=x+dx/(d||1)*step,nz=z+dz/(d||1)*step;
+    if(d>.08&&canStand(nx,nz)){x=nx;z=nz;y=terrainHeight(x,z);walk=1;}
    }
    if(a.kind==='butterfly'&&a.index===0){const toys=getDelights(),cloth=s.delights.find(p=>['hammock','curtain'].includes(p.kind)&&p.baseY>=0);if(cloth){const target=toys.anchor(cloth.id,cloth.kind==='hammock'?'seat':'cloth');const old=a.model.position;if(a.model.visible){const v=new THREE.Vector3(target.x+.15,target.y+.08,target.z).sub(old),d=v.length();if(d<.03){x=target.x+.15;y=target.y+.08;z=target.z;walk=.1;perch=1;}else {v.normalize().multiplyScalar(Math.min(d,dt*.65));x=old.x+v.x;y=old.y+v.y;z=old.z+v.z;}}}}
    if(a.kind==='deer'&&!canStand(x,z)){a.model.visible=false;continue;}
+   if(p.retired&&a.model.visible){const delta=new THREE.Vector3(x,y,z).sub(a.model.position),d=delta.length();if(d>dt*.6){delta.multiplyScalar(dt*.6/d);x=a.model.position.x+delta.x;y=a.model.position.y+delta.y;z=a.model.position.z+delta.z;}}
    const old=a.model.position.clone();a.model.visible=true;a.model.position.set(x,y,z);if(walk)a.model.rotation.y=Math.atan2(x-old.x,z-old.z);a.at=key;a.walking=walk;a.perch=perch;animateAnimal(a.model,{time:t,walk,perch,sniff:a.kind==='deer'?1-walk:0});
   }
  }
- function reset(){for(const a of animals){a.at=null;a.model.visible=false;}sync();}
+ function reset(){for(const a of animals){a.at=null;a.lastPlot=null;a.model.visible=false;}sync();}
  return {sync,update,reset,discoveries,readingObjects:()=>animals.filter(a=>a.model.visible).map(a=>({kind:a.kind,model:a.model,index:a.index})),snapshot:()=>animals.filter(a=>a.model.visible).map(a=>({kind:a.kind,at:a.at,x:a.model.position.x,y:a.model.position.y,z:a.model.position.z,walking:a.walking,perch:a.perch}))};
 }

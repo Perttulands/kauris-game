@@ -80,11 +80,10 @@ export function createOceanWorld({terrain,heightAt}){
  const b=new Batch();let seed=78912;const random=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};
  // Batch.add returns the exact transformed copy later merged into the rendered mesh.
  const addRock=(shape,mat,...args)=>{const geometry=b.add(shape,mat,...args);reefSolids.push(convexSolid(Array.from(geometry.attributes.position.array)));};
- const padClear=(x,z,r=0)=>!terrain.pads.some(p=>x+r>p.minGX*2-1&&x-r<p.maxGX*2+1&&z+r>p.minGZ*2-1&&z-r<p.maxGZ*2+1);
  // Reef beds form two banks flanking the house clearing and its open sand approach.
  for(const side of [-1,1])for(let row=0;row<9;row++){
   const x=side*(15.4+random()*5.4),z=35.5+row*3.2,y=heightAt(x,z),scale=.9+random()*1.0;
-  if(!padClear(x,z,2.2))continue;
+  if(y>=terrain.waterY)continue;
   addRock('rock','stone',x,y+.19,z,scale*1.5,.38+scale*.12,scale,0,row*.71,.08);
   addRock('rough','stoneLight',x+.35,y+.34,z,scale,.22,scale*.65,0,row);
   coral(b,x-.25,y+.45,z,scale*.81,row);
@@ -98,10 +97,10 @@ export function createOceanWorld({terrain,heightAt}){
   const y=heightAt(x,z);if(y>terrain.waterY-.6)continue;
   if(i%3===0)coral(b,x,y,z,.35+random()*.55,i);else if(i%3===1)scallop(b,x,y,z,.28+random()*.26,i);else kelp(b,x,y,z,.35+random()*.55,i);
  }
- // Foreground-facing reef terraces sit BEHIND the pad, in the arrival view.
+ // Foreground-facing reef terraces sit around the reef, in the arrival view.
  const rx=terrain.reef.x,rz=terrain.reef.z+2,base=heightAt(rx,rz);
  for(const side of [-1,1])for(let bed=0;bed<3;bed++){
-  const x=rx+side*(5.15+bed*3.20),z=terrain.pads.reduce((n,p)=>Math.max(n,p.maxGZ*2+1),0)+2.35+bed*1.05,y=heightAt(x,z),rise=bed===1?1.42:.95;
+  const x=rx+side*(5.15+bed*3.20),z=terrain.reef.z+1.35+bed*1.05,y=heightAt(x,z),rise=bed===1?1.42:.95;
   addRock('rock','stone',x,y+.35,z,2.12,.75,1.29,0,side*.24);
   addRock('rough','stoneLight',x-side*.25,y+.85,z+.30,1.61,.44,.94,.10,bed*.55,.08);
   addRock('rock','stone',x+side*.33,y+rise,z+.59,1.12,.48,.76,0,side*.7);
@@ -124,7 +123,7 @@ export function createOceanWorld({terrain,heightAt}){
   scallop(b,x-side*.65,y+.025,z-1.02,.68,side*.45);
  }
  // A substantial scalloped shell vault, with a broad ribbed skin and open passage.
- // All supporting forms remain beyond the build pads; central swim corridor stays clear.
+ // All supporting forms remain beside the passage; central swim corridor stays clear.
  const shellPoint=(a,u,back=false)=>{
   const radius=2.68+(5.03+.14*Math.cos(a*14)-2.68)*u;
   const height=2.78+(4.45+.11*Math.cos(a*14)-2.78)*u;
@@ -151,44 +150,4 @@ export function createOceanWorld({terrain,heightAt}){
  // Sandy shell stepping motifs lead through the arch; never raised enough to hide a floor.
  for(let i=0;i<5;i++)scallop(b,rx+Math.sin(i*1.9)*.9,base-.07,rz-2+i*.58,.35+i*.027,.25);
  root.add(b.finish('reef-beds-and-shell-crown'));root.userData.reefSolids=reefSolids;root.userData.backdropBounds=backdropBounds;return root;
-}
-// Low, soft planting within pads yields to funded construction and doorway approaches.
-export function createReefCover({terrain,heightAt,excludedCells=[]}){
- if(!terrain||typeof heightAt!=='function')throw new TypeError('Reef cover requires authoritative terrain and heightAt');
- const b=new Batch(),excluded=excludedCells.filter(c=>Number.isFinite(c.gx)&&Number.isFinite(c.gz));
- let seed=41903;const random=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};
- const channel=z=>Math.sin((z-43)*.24)*1.8;
- const ribbon=(x,y,z,h,angle,width,mat)=>{
-  const vertices=[],point=(t,side)=>{
-   const lean=.37*h*t*t,w=Math.sin(t*Math.PI)*width;
-   return [x+Math.cos(angle)*lean-Math.sin(angle)*w*side,y+h*t,z+Math.sin(angle)*lean+Math.cos(angle)*w*side];
-  };
-  for(let i=0;i<4;i++){const t=i/4,u=(i+1)/4,a=point(t,-1),c=point(t,1),d=point(u,-1),e=point(u,1);vertices.push(...a,...c,...d,...c,...e,...d);}
-  triangles(b,mat,vertices);
- };
- let clumps=0;
- for(const pad of terrain.pads)for(let i=0;i<540;i++){
-  const minX=pad.minGX*2-.2,maxX=pad.maxGX*2+.2,minZ=pad.minGZ*2-.2,maxZ=pad.maxGZ*2+.2,x=minX+random()*(maxX-minX),z=minZ+random()*(maxZ-minZ);
-  // Four-meter winding central swim channel and broad cross-pad construction approach.
-  if(Math.abs(x-channel(z))<2.55||Math.abs(z-(pad.minGZ*2+3.0))<1.0)continue;
-  const patch=Math.sin(x*.47+Math.sin(z*.36))+Math.cos(z*.69-x*.13);
-  if(patch<-.05||random()>.83)continue;
-  // Root rejection includes full cell, one-meter doorstep margin and leaf overhang.
-  if(excluded.some(c=>Math.abs(x-c.gx*2)<2.65&&Math.abs(z-c.gz*2)<2.65))continue;
-  const y=heightAt(x,z),phase=random()*Math.PI*2,h=.42+random()*.42;clumps++;
-  for(let j=0;j<6;j++)ribbon(x+(random()-.5)*.13,y,z+(random()-.5)*.13,h*(.72+random()*.28),phase+j*1.047,.085+random()*.055,j%3?'kelp':'kelpLight');
-  if(i%5===0){
-   // Attached soft branching fans alternate salmon and lilac inside the grass banks.
-   const mat=i%2?'coral':'violet',tip=i%2?'coralTip':'violetTip';
-   for(let j=0;j<4;j++){
-    const a=phase+j*1.57,stem=[x,y+.04,z],fork=[x+Math.cos(a)*.13,y+.25,z+Math.sin(a)*.13];b.beam(mat,stem,fork,.032,.022);
-    for(const side of [-1,1]){const end=[fork[0]+Math.cos(a+side*.7)*.10,y+.43+(j%2)*.10,fork[2]+Math.sin(a+side*.7)*.10];b.beam(mat,fork,end,.024,.014);b.add('rough',tip,...end,.031,.043,.031);}
-   }
-  }
-  if(i%9===0)scallop(b,x+.23,y-.035,z+.09,.24,phase);
- }
- const group=b.finish('soft-reef-cover');
- // Batch geometries are already private; detach palettes before exposing disposal ownership.
- group.traverse(o=>{if(o.isMesh)o.material=o.material.clone();});
- group.userData.privateResources=true;group.userData.clumps=clumps;return group;
 }

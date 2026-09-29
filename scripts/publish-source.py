@@ -25,6 +25,13 @@ revision=run('git','rev-parse',args.revision+'^{commit}')
 output=args.output.resolve()
 if output==source or source in output.parents:raise SystemExit('Export must be a separate checkout outside source.')
 allow={'README.md','package.json','package-lock.json','index.html','scripts/publish-source.py','scripts/package-static.mjs','HOSTING.md','hosting/Caddyfile','hosting/kauris-static.service','src/catalogue-manifest.json','scripts/bake-catalogue.mjs','scripts/catalogue-render.js'}
+# Only the reviewed recorded bank and its public provenance belong in the export.
+allow.update({'public/audio/manifest.json','public/audio/CREDITS.md',
+ 'public/audio/shore-loop.ogg','public/audio/water-loop.ogg','public/audio/bell-0.ogg'})
+allow.update('public/audio/'+kind+'-'+str(i)+'.ogg'
+ for kind,count in [('step-soft',6),('step-hard',6),('step-wood',3),
+                    ('dig',3),('chop',3),('fill',3),('build',3),('swim',3)]
+ for i in range(count))
 paths=run('git','ls-tree','-r','--name-only',revision).splitlines()
 def allowed(p):
  return p in allow or (p.startswith('src/') and Path(p).suffix in ('.js','.css')) or (p.startswith('tests/') and p.endswith('.test.js')) or (p.startswith('public/assets/') and Path(p).suffix in ('.glb','.png','.jpg','.webp','.svg','.ogg','.wav','.mp3'))

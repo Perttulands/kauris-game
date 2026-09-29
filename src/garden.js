@@ -1,4 +1,3 @@
-import {cellFootprint,overlaps} from './world-data.js';
 export const SPECIAL_SEEDS=['golden','starflower'];
 export const isFlower=kind=>kind==='flowers'||kind==='starflower';
 export const DISCOVERIES=[
@@ -13,16 +12,7 @@ export function readGarden(raw,s){
  for(const [field,known] of [['discoveries',DISCOVERIES.map(d=>d.id)],['discoveryHidden',DISCOVERIES.map(d=>d.id)],['unlockedSeeds',SPECIAL_SEEDS]]){
   const value=raw[field]??[];if(!Array.isArray(value)||value.length>100||value.some(x=>typeof x!=='string'))throw Error('Invalid garden record');s[field]=[...new Set(value.filter(x=>known.includes(x)))];
  }
- if(raw.contentRevision!==undefined&&raw.contentRevision!==2)throw Error('Unsupported garden revision');
  s.contentRevision=2;
- if(raw.contentRevision!==2){
-  const occupied=[...Object.values(s.plots),...s.buildings].map(p=>cellFootprint(p.gx,p.gz,.35));const p=s.player;occupied.push({minX:p.x-1.5,maxX:p.x+1.5,minZ:p.z-1.5,maxZ:p.z+1.5});
-  for(const d of DISCOVERIES)if(occupied.some(b=>overlaps(b,d.bounds))&&!s.discoveryHidden.includes(d.id))s.discoveryHidden.push(d.id);
- }
- // Suppressed content gifts its seed; visiting another location remains meaningful.
- for(const d of DISCOVERIES)if((s.discoveryHidden.includes(d.id)||s.discoveries.includes(d.id))&&!s.unlockedSeeds.includes(d.unlock))s.unlockedSeeds.push(d.unlock);
- // Preserve plants that already exist even if a newer unlock field was absent.
- for(const p of Object.values(s.plots))if(SPECIAL_SEEDS.includes(p.seed)&&!s.unlockedSeeds.includes(p.seed))s.unlockedSeeds.push(p.seed);
  return s;
 }
 export function discover(s,id){

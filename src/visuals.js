@@ -1,10 +1,11 @@
+import {terrainHeight} from './terrain.js';
 import * as THREE from 'three';
 import {createCraftPiece,createWateringCan} from './craft-visuals.js';
 import { createStagedTree, animateStagedTree } from './garden-visuals.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { PLACES, WILD_RESOURCES, WORLD_OBSTACLES, cellFootprint, overlaps } from './world-data.js';
+import { PLACES, WORLD_OBSTACLES, cellFootprint, overlaps } from './world-data.js';
 
 // All gameplay factories return immediately. Static forms are batched by material.
 const M = {};
@@ -150,52 +151,19 @@ function ringGeometry(inner, outer, yInner, yOuter, count = 64) {
   }
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3)); g.computeVertexNormals(); return g;
 }
-export function createWorld({occupiedCells = [], hiddenLandmarks = []} = {}) {
+export function createLandmarks({occupiedCells = [], hiddenLandmarks = []} = {}) {
   const b = new Batch(), colliders = [];
   const saved = occupiedCells.map(({gx,gz}) => cellFootprint(gx,gz,.20));
-  const resourceCells = WILD_RESOURCES.map(({gx,gz}) => cellFootprint(gx,gz,.10));
-  const free = (x,z,rx,rz=rx) => ![...saved,...resourceCells].some(a => overlaps(a,{minX:x-rx,maxX:x+rx,minZ:z-rz,maxZ:z+rz}));
   const windmill = WORLD_OBSTACLES.find(o=>o.id==='windmill');
   const windmillPlace = PLACES.find(p=>p.id==='windmill');
   const showWindmill = !!windmill && !hiddenLandmarks.includes('windmill') && !saved.some(a=>overlaps(a,windmill));
-  // Continuous shared terrain replaces the former visual-only island skirt.
-  // All reachable trees and flowers are authoritative, harvestable lead-owned resources.
-  let seed = 127; const random = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
-  for (let i = 0; i < 230; i++) {
-    const a = random() * Math.PI * 2, r = 19 + random() * 11;
-    const x = Math.cos(a) * r, z = Math.sin(a) * r;
-    if (Math.abs(x) < 15 && Math.abs(z) < 15 || Math.abs(x) > 27 || Math.abs(z) > 27 || !free(x,z,.35)) continue;
-    // Small leaf fans occur in broad broken patches, not at snapped cell edges.
-    // Leave the central part of every cultivation face clear and recognizable.
-    if(Math.hypot(x-Math.round(x/2)*2,z-Math.round(z/2)*2)<.92)continue;
-    if(Math.sin(x*.38+z*.16)+Math.cos(z*.43)<.2)continue;
-    const h = .13 + random() * .13;
-    for(let j=0;j<5;j++){
-      const angle=a+j*1.256,reach=.10+(j%2)*.045;
-      b.add('ball',j%3?'grassDark':'grassLight',x+Math.cos(angle)*reach,h*.45,z+Math.sin(angle)*reach,.027,h*.59,.057,.32,angle,-.27);
-    }
-  }
-  // Old outside headlands, baked trees, islands and foam are retired: these
-  // coordinates now belong to authoritative streamed terrain and resources.
   // Broad cloud banks give the open working meadow a composed sky.
   for (const [x,y,z,s] of [[-52,27,-65,1],[24,32,-90,1.4],[75,23,-35,.85],[-65,22,48,1.1]]) {
     for(let i=0;i<4;i++) b.add('ball','cloud',x+(i-1.5)*4*s,y+(i%2)*1.3*s,z,5*s,1.5*s,2.5*s,0,i*.6);
   }
-  // Broken grassy verges suggest routes; their roots never snap to a tile grid.
-  for(const place of PLACES) {
-    const startX=Math.sign(place.x)*15.05,startZ=place.id==='grove'?4:-15.05;
-    for(let i=0;i<24;i++) {
-      const t=i/23,x=startX+(place.x-startX)*t,z=startZ+(place.z-startZ)*t;
-      for(const side of [-1,1]) {
-        const gx=x+side*(.75+.14*Math.sin(i*2.4)),gz=z+Math.sin(t*5)*.35;
-        if(Math.abs(gx)<15&&Math.abs(gz)<15||!free(gx,gz,.22)||Math.hypot(gx-Math.round(gx/2)*2,gz-Math.round(gz/2)*2)<.92||i%3===0)continue;
-        for(let j=0;j<3;j++)b.add('ball',j?'grassDark':'grassLight',gx+Math.cos(j*2.4)*.065,.07,gz+Math.sin(j*2.4)*.065,.028,.10,.045,.28,i+j,-.22);
-      }
-    }
-  }
   // Reachable windmill only occupies the shared authoritative footprint.
   if(showWindmill) {
-    b.add('cylinder','rock',windmillPlace.x,.025,windmillPlace.z,1.75,.05,1.75);
+    b.add('cylinder','rock',windmillPlace.x,terrainHeight(windmillPlace.x,windmillPlace.z)+.025,windmillPlace.z,1.75,.05,1.75);
     colliders.push({...windmill});
   }
   const group = b.finish('orchard-island');
@@ -207,7 +175,7 @@ export function createWorld({occupiedCells = [], hiddenLandmarks = []} = {}) {
     gltf.scene.rotation.y=.3;
     const bounds=new THREE.Box3().setFromObject(gltf.scene),size=bounds.getSize(new THREE.Vector3()),center=bounds.getCenter(new THREE.Vector3());
     const scale=Math.min(1,3.8/Math.max(size.x,size.z));gltf.scene.scale.setScalar(scale);
-    gltf.scene.position.set(windmillPlace.x-center.x*scale,.05,windmillPlace.z-center.z*scale);
+    gltf.scene.position.set(windmillPlace.x-center.x*scale,terrainHeight(windmillPlace.x,windmillPlace.z)+.05,windmillPlace.z-center.z*scale);
     gltf.scene.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=true;}});group.add(gltf.scene);
   }, undefined, () => { group.userData.landmarkLoadFailed = true; });
   return {group,colliders};
@@ -246,7 +214,7 @@ function outfitPalette(outfit) {
 export function createResident(variant = 0, outfit = 0, diver = false) {
   const index=Number.isFinite(variant)?((Math.trunc(variant)%4)+4)%4:0;
   const palette=residentPalette(index),root=new THREE.Group(),body=new THREE.Group();
-  root.name='orchard-resident';root.userData.residentVariant=index;
+  root.name=diver?'reef-diver':'orchard-resident';root.userData.residentVariant=index;root.userData.diver=diver;
   body.name='resident-body';root.add(body);
   const block=(b,mat,x,y,z,sx,sy,sz,rx=0,ry=0,rz=0)=>b.add('residentBlock',mat,x,y,z,sx,sy,sz,rx,ry,rz);
   const torso=new Batch();
@@ -328,9 +296,9 @@ export function createResident(variant = 0, outfit = 0, diver = false) {
     block(b,'residentShirt',0,-.177,0,.133,.048,.194);
     b.add('box','trim',0,-.193,.091,.113,.008,.006);upper.add(b.finish('sleeve'));
     const elbow=joint('resident-elbow',upper,0,-.207);
-    b=new Batch();block(b,palette.skin,0,-.068,0,.104,.153,.124);elbow.add(b.finish('forearm'));
+    b=new Batch();block(b,diver?'diverTeal':palette.skin,0,-.068,0,.104,.153,.124);elbow.add(b.finish('forearm'));
     const hand=joint('resident-hand',elbow,0,-.166,.008);b=new Batch();
-    block(b,palette.skin,0,-.029,.013,.110,.09,.133);
+    block(b,diver?'diverCream':palette.skin,0,-.029,.013,.110,.09,.133);
     block(b,palette.skin,-side*.056,-.007,.039,.044,.059,.065,0,0,side*.21);
     // Two restrained finger separations remain on the palm face, not deep cuts.
     for(const x of [-.019,.017])b.add('box','residentCheek',x,-.051,.078,.004,.021,.003);
@@ -359,7 +327,7 @@ export function createResident(variant = 0, outfit = 0, diver = false) {
       const vertices=[];for(let i=0;i<8;i++){const j=(i+1)%8,a=[...outer[i],z0],b=[...outer[j],z0],c=[...inner[i],z1],d=[...inner[j],z1];vertices.push(...a,...c,...b,...b,...c,...d);}
       const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.Float32BufferAttribute(vertices,3));geo.computeVertexNormals();helmet.geometry(geo,mat);geo.dispose();
     };
-    const outer=outline(.480,.505,.125,.092),rear=outline(.444,.463,.128,.09),back=outline(.335,.345,.131,.079),rim=outline(.406,.379,.105,.05),aperture=outline(.371,.346,.105,.042);
+    const outer=outline(.540,.570,.13,.112),rear=outline(.490,.515,.13,.10),back=outline(.365,.385,.13,.09),rim=outline(.466,.429,.105,.075),aperture=outline(.360,.326,.105,.06);
     band(outer,.202,rear,-.139,'diverCream');band(rear,-.139,back,-.236,'diverCream');band(back,-.236,outline(.008,.008,.131,.002),-.256,'diverCream');
     band(rim,.246,outer,.202,'diverCream');band(aperture,.258,rim,.246,'diverBrass');
     for(const side of [-1,1]){
@@ -383,6 +351,8 @@ export function createResident(variant = 0, outfit = 0, diver = false) {
     block(gear,'diverBrass',0,.745,.171,.052,.04,.02);
     gear.add('cylinder','diverCream',-.102,.940,.183,.039,.021,.039,Math.PI/2);
     gear.add('box','barkDark',-.102,.945,.196,.008,.032,.003,0,0,.45);
+    branch(gear,'diverBrass',[.24,1.18,.04],[.265,1.00,.18],.022);
+    branch(gear,'diverBrass',[.265,1.00,.18],[.16,.88,.19],.022);
     body.add(gear.finish('diver-pack-and-straps'));
   }
   const leftArm=arm(-1),rightArm=arm(1),leftLeg=leg(-1),rightLeg=leg(1),clothes=[];
@@ -394,7 +364,7 @@ export function createResident(variant = 0, outfit = 0, diver = false) {
 export function setResidentOutfit(group, outfit = 0) {
   const rig=residentRigs.get(group);if(!rig)return;
   const index=Number.isFinite(outfit)?((Math.trunc(outfit)%4)+4)%4:0,palette=outfitPalette(index);
-  for(const [mesh,role] of rig.clothes)mesh.material=palette[role];
+  for(const [mesh,role] of rig.clothes)mesh.material=group.userData.diver?(role==='scarf'?M.diverCream:role==='apron'?palette.shirt:palette.apron):palette[role];
   group.userData.outfit=index;
 }
 export function animateResident(group,{time=0,walk=0,wave=0,sit=0,look=0,celebrate=0,moveSpeed=.6,diver=false,carry=0,rest=0}={}) {

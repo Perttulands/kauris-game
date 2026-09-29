@@ -1,12 +1,13 @@
+import {sampleCell,cellAt,GRID} from './surface-grid.js';
 import * as THREE from 'three';
-import {REGIONS,sampleWorld as sharedSample} from './world-layout.js';
+import {REGIONS} from './world-layout.js';
 
 // Shared immutable palette; a chunk owns only its buffers. No GPU texture uploads
 // or materials are allocated when crossing a chunk boundary.
 const terrainMaterial=new THREE.MeshStandardMaterial({vertexColors:true,roughness:1});
 const rockMaterial=new THREE.MeshStandardMaterial({vertexColors:true,roughness:.96,flatShading:true});
 const foliageMaterial=new THREE.MeshStandardMaterial({vertexColors:true,roughness:.94,side:THREE.DoubleSide});
-const colors=Object.fromEntries(Object.entries({grass:'#659263',grassLight:'#87ab77',grassDark:'#477653',earth:'#aa9974',sand:'#cbbd9e',sandLight:'#e1d2af',wetSand:'#a5b5a4',deep:'#638f88',paleStone:'#9fa796',warmStone:'#b7a07d',seaStone:'#6d9690',stem:'#5b8056',clover:'#75a17a',flower:'#e5c781',pink:'#d5aaa3',kelp:'#528f75',kelpTip:'#80ad83',shell:'#e3d2af',coral:'#c89472'}).map(([k,c])=>[k,new THREE.Color(c)]));
+const colors=Object.fromEntries(Object.entries({grass:'#659263',grassLight:'#87ab77',grassDark:'#477653',groveFloor:'#416b50',flowerGround:'#9fa373',birchMeadow:'#a6b383',coveMeadow:'#729c87',bayMeadow:'#b3ad76',islandMeadow:'#8cafa0',earth:'#aa9974',sand:'#cbbd9e',sandLight:'#e1d2af',wetSand:'#a5b5a4',deep:'#638f88',paleStone:'#9fa796',warmStone:'#b7a07d',seaStone:'#6d9690',stem:'#5b8056',clover:'#75a17a',flower:'#e5c781',pink:'#d5aaa3',kelp:'#528f75',kelpTip:'#80ad83',shell:'#e3d2af',coral:'#c89472'}).map(([k,c])=>[k,new THREE.Color(c)]));
 terrainMaterial.onBeforeCompile=shader=>{
  shader.vertexShader='varying vec3 terrainPoint;\n'+shader.vertexShader;
  shader.vertexShader=shader.vertexShader.replace('#include <begin_vertex>','#include <begin_vertex>\nterrainPoint=position;');
@@ -27,12 +28,25 @@ terrainMaterial.onBeforeCompile=shader=>{
 terrainMaterial.customProgramCacheKey=()=> 'kauris-world-terrain-v2';
 const smooth=(a,b,x)=>{const t=Math.max(0,Math.min(1,(x-a)/(b-a)));return t*t*(3-2*t);};
 function routeDistance(x,z){let d=Infinity;for(const r of REGIONS)for(let i=1;i<r.route.length;i++){const a=r.route[i-1],b=r.route[i],dx=b[0]-a[0],dz=b[1]-a[1],t=Math.max(0,Math.min(1,((x-a[0])*dx+(z-a[1])*dz)/(dx*dx+dz*dz)));d=Math.min(d,Math.hypot(x-a[0]-t*dx,z-a[1]-t*dz));}return d;}
-const scratch=new THREE.Color();
-function groundColor(x,y,z,shoreDistance){
+const scratch=new THREE.Color(),meadowPalettes={'birch-downs':'birchMeadow','reed-cove':'coveMeadow','amber-bay':'bayMeadow','seagrass-sound':'islandMeadow'};
+// Wide quiet ground shapes bind the new north grove edges into one place.
+// These are meadow finishes, not shadows or occupancy restrictions; harvesting
+// opens the same usable ground and every rectangle retains its sampled height.
+const groveBeds=[[-15,-98,8,15],[27,-96,12,13],[1,-112,12,6],[-12,-46,6,9],[18,-60,6,8]];
+function groundColor(x,y,z,shoreDistance,substrate){
  const broad=(Math.sin(x*.113+Math.sin(z*.07))+.6*Math.cos(z*.137-x*.036))/1.6;
- if(y<-.12){scratch.copy(colors.sand).lerp(y<-4?colors.deep:colors.sandLight,smooth(-1,-10,y)*.42+.12+.09*broad);}
+ if(substrate==='rock'){scratch.copy(colors.paleStone).lerp(colors.warmStone,.18+.12*broad);}
+ else if(substrate==='sand'){scratch.copy(colors.sand).lerp(y<-4?colors.deep:colors.sandLight,smooth(-1,-10,y)*.42+.12+.09*broad);}
  else{
   scratch.copy(colors.grass).lerp(broad>0?colors.grassLight:colors.grassDark,Math.abs(broad)*.24);
+  for(const r of REGIONS){const palette=meadowPalettes[r.id];if(!palette)continue;const d=Math.hypot((x-r.x)/1.1,z-r.z),weight=(1-smooth(10,42,d))*(.55+.1*broad);scratch.lerp(colors[palette],weight);}
+  for(const [cx,cz,rx,rz] of groveBeds){
+   const d=Math.hypot((x-cx)/rx,(z-cz)/rz);
+   const bed=1-smooth(.4,1.15,d);
+   scratch.lerp(colors.groveFloor,bed*.56);
+   const verge=smooth(.3,.65,d)*(1-smooth(.65,1.05,d));
+   scratch.lerp(colors.flowerGround,verge*.30);
+  }
   const worn=(1-smooth(.6,2,routeDistance(x,z)))*.46;
   scratch.lerp(colors.earth,worn);
   // A level inland garden is grass, not a beach: elevation alone is insufficient.
@@ -41,28 +55,66 @@ function groundColor(x,y,z,shoreDistance){
  }
  return [scratch.r,scratch.g,scratch.b];
 }
-const gridEdges={x:[-28,28],z:[-28,...Array.from({length:13},(_,i)=>27+i),70,86,112]};
-function axis(min,max,which){const values=[min,max];for(let n=min+1;n<max;n+=2)values.push(n);for(let n=Math.ceil(min/32)*32;n<max;n+=32)values.push(n);for(const n of gridEdges[which])if(n>min&&n<max)values.push(n);return [...new Set(values)].sort((a,b)=>a-b);}
-function terrain(descriptor,sampleWorld,holes){
- const {bounds:b}=descriptor,xs=axis(b.minX-2,b.maxX+2,'x'),zs=axis(b.minZ-2,b.maxZ+2,'z'),positions=[],paint=[],normalIndices=[],indices=[],holeSet=new Set(holes.map(p=>`${p.gx},${p.gz}`));
- // One ghost cell around the chunk supplies all shared-vertex incident faces.
- // Compute area-weighted normals on it, then render only the interior triangles.
- for(const z of zs)for(const x of xs){const sample=sampleWorld(x,z),y=sample.height;positions.push(x,y,z);paint.push(...groundColor(x,y,z,sample.shoreDistance));}
- for(let j=0;j<zs.length-1;j++)for(let i=0;i<xs.length-1;i++){
-  const a=j*xs.length+i,c=a+xs.length;normalIndices.push(a,c,a+1,a+1,c,c+1);
-  if(xs[i]<b.minX||xs[i+1]>b.maxX||zs[j]<b.minZ||zs[j+1]>b.maxZ)continue;
-  // The existing editable meadow has its own729 live top faces and hole walls.
-  if(xs[i]>=-27&&xs[i+1]<=27&&zs[j]>=-27&&zs[j+1]<=27)continue;
-  if(holeSet.has(`${Math.round((xs[i]+xs[i+1])/4)},${Math.round((zs[j]+zs[j+1])/4)}`))continue;
-  indices.push(a,c,a+1,a+1,c,c+1);
+// Cells own their top and only the exposed side above a lower neighbour.
+// Adjacent chunks query the same cells, so there are no skirt overlaps or seams.
+// A hole lowers its outgoing terrace side. plotSurfaces owns the excavation
+// below each neighbour's original terrace, avoiding overlapping inner walls.
+// Depth tint and grazing-angle reflection keep the stepped seabed readable near
+// shore without letting its terrace stripes replace the surface. The underside
+// stays transparent; this changes no water occupancy, heights or targeting.
+const waterMaterial=new THREE.MeshPhysicalMaterial({color:'#ffffff',roughness:.3,metalness:.03,transparent:true,opacity:1,depthWrite:false,side:THREE.DoubleSide});
+waterMaterial.onBeforeCompile=shader=>{
+ shader.vertexShader='attribute float waterDepth; varying float seaDepth; varying vec3 seaPoint;\n'+shader.vertexShader;
+ shader.vertexShader=shader.vertexShader.replace('#include <begin_vertex>','#include <begin_vertex>\nseaDepth=waterDepth; seaPoint=position;');
+ shader.fragmentShader='varying float seaDepth; varying vec3 seaPoint;\n'+shader.fragmentShader;
+ shader.fragmentShader=shader.fragmentShader.replace('#include <color_fragment>',`#include <color_fragment>
+  float depthTint=1.0-exp(-seaDepth*.38);
+  float grazing=pow(1.0-abs(normalize(cameraPosition-seaPoint).y),3.0);
+  vec3 shallow=vec3(.07,.37,.40),deep=vec3(.025,.17,.26);
+  diffuseColor.rgb*=mix(shallow,deep,depthTint);
+  diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.30,.57,.63),grazing*.3);
+  float wavePhase=seaPoint.x*.65+seaPoint.z*.92+sin(seaPoint.x*.24)*1.8;
+  float waveAA=1.0-smoothstep(.4,1.8,fwidth(wavePhase));
+  float crest=pow(.5+.5*sin(wavePhase),16.0)*waveAA;
+  diffuseColor.rgb+=vec3(.02,.035,.04)*crest;
+  diffuseColor.a=cameraPosition.y>=seaPoint.y?min(.985,.52+.40*depthTint+.28*grazing):.12;
+ `);
+};
+waterMaterial.customProgramCacheKey=()=> 'kauris-depth-water-v1';
+// Linear vertex colours need byte precision, not three float32 channels. Keep
+// the exact geometry/population while bounding the larger botanical groupings.
+// Packed normals keep the same unit directions (terrain normals are axis exact)
+// and release the temporary float buffer after construction.
+function packNormals(g){const n=g.attributes.normal;g.setAttribute('normal',new THREE.Int8BufferAttribute(Array.from(n.array,v=>Math.round(v*127)),3,true));}
+const colorAttribute=values=>new THREE.Uint8BufferAttribute(values.map(v=>Math.round(Math.max(0,Math.min(1,v))*255)),3,true);
+function terrain(descriptor,holes){
+ const positions=[],paint=[],water=[],waterDepth=[],b=descriptor.bounds,holeSet=new Set(holes.map(p=>`${p.gx},${p.gz}`));
+ const quad=(a,c,d,e,color)=>{positions.push(...a,...c,...d,...a,...d,...e);for(let i=0;i<6;i++)paint.push(...color);};
+ for(let gz=(b.minZ+1)/2;gz<(b.maxZ+1)/2;gz++)for(let gx=(b.minX+1)/2;gx<(b.maxX+1)/2;gx++){
+  const s=sampleCell(gx,gz),x=gx*2,z=gz*2,y=s.height-(holeSet.has(`${gx},${gz}`)?.6:0),loX=x-1,hiX=x+1,loZ=z-1,hiZ=z+1;
+  const color=groundColor(x,y,z,s.shoreDistance,s.substrate);
+  if(!holeSet.has(`${gx},${gz}`))quad([loX,y,loZ],[loX,y,hiZ],[hiX,y,hiZ],[hiX,y,loZ],color);
+  for(const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]){
+   const lower=sampleCell(gx+dx,gz+dz).height;if(lower>=y)continue;
+   const side=s.substrate==='soil'?colors.earth:s.substrate==='rock'?colors.paleStone:colors.sand;
+   const shade=s.waterY!==null?color.map(c=>c*.92):[side.r*.78,side.g*.78,side.b*.78];
+   if(dx===1)quad([hiX,y,hiZ],[hiX,lower,hiZ],[hiX,lower,loZ],[hiX,y,loZ],shade);
+   if(dx===-1)quad([loX,y,loZ],[loX,lower,loZ],[loX,lower,hiZ],[loX,y,hiZ],shade);
+   if(dz===1)quad([loX,y,hiZ],[loX,lower,hiZ],[hiX,lower,hiZ],[hiX,y,hiZ],shade);
+   if(dz===-1)quad([hiX,y,loZ],[hiX,lower,loZ],[loX,lower,loZ],[loX,y,loZ],shade);
+  }
+  if(s.waterY!==null){const w=s.waterY;water.push(loX,w,loZ,loX,w,hiZ,hiX,w,hiZ,loX,w,loZ,hiX,w,hiZ,hiX,w,loZ);for(let i=0;i<6;i++)waterDepth.push(w-s.height);}
  }
- if(!indices.length)return null;
- const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));geometry.setAttribute('color',new THREE.Float32BufferAttribute(paint,3));geometry.setIndex(normalIndices);geometry.computeVertexNormals();geometry.setIndex(indices);geometry.computeBoundingSphere();
- const mesh=new THREE.Mesh(geometry,terrainMaterial);mesh.name=`terrain:${descriptor.id}`;mesh.receiveShadow=true;mesh.userData.worldGround=true;return mesh;
+ const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));geometry.setAttribute('color',colorAttribute(paint));geometry.computeVertexNormals();packNormals(geometry);geometry.computeBoundingSphere();
+ const ground=new THREE.Mesh(geometry,terrainMaterial);ground.name=`terrain:${descriptor.id}`;ground.receiveShadow=true;ground.userData.worldGround=true;
+ const cast=ground.raycast;ground.raycast=function(raycaster,hits){const candidates=[];cast.call(this,raycaster,candidates);for(const hit of candidates){if(hit.face.normal.y>.5){const {gx,gz}=cellAt(hit.point.x,hit.point.z);if(Math.abs(hit.point.y-sampleCell(gx,gz).height)>1e-5)continue;}hits.push(hit);}};
+
+ let sea=null;if(water.length){const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(water,3));g.setAttribute('waterDepth',new THREE.Float32BufferAttribute(waterDepth,1));g.computeVertexNormals();packNormals(g);g.computeBoundingSphere();sea=new THREE.Mesh(g,waterMaterial);sea.name=`water:${descriptor.id}`;sea.userData.worldWater=true;sea.raycast=()=>{};}
+ return {ground,sea};
 }
 function batch(material,name){const positions=[],paint=[];return {
  triangle(a,b,c,color,shade=1){positions.push(...a,...b,...c);for(let i=0;i<3;i++)paint.push(color.r*shade,color.g*shade,color.b*shade);},
- finish(){if(!positions.length)return null;const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));g.setAttribute('color',new THREE.Float32BufferAttribute(paint,3));g.computeVertexNormals();g.computeBoundingSphere();const mesh=new THREE.Mesh(g,material);mesh.name=name;mesh.receiveShadow=true;return mesh;}
+ finish(){if(!positions.length)return null;const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));g.setAttribute('color',colorAttribute(paint));g.computeVertexNormals();packNormals(g);g.computeBoundingSphere();const mesh=new THREE.Mesh(g,material);mesh.name=name;mesh.receiveShadow=true;return mesh;}
  };}
 function ribbon(b,x,y,z,h,a,width,color,bend=.36){
  const dx=Math.cos(a),dz=Math.sin(a),point=(t,side)=>{const w=Math.sin(Math.PI*t)*width,reach=h*bend*t*t;return [x+dx*reach-dz*w*side,y+h*(t-.13*t*t),z+dz*reach+dx*w*side];};
@@ -102,16 +154,18 @@ function botanical(b,d){
   }
  }
 }
-export function createWorldChunk(descriptor,{sampleWorld=sharedSample,excludedCells=[],holes=[],detail=true}={}){
+export function createWorldChunk(descriptor,{excludedCells=[],holes=[],detail=true}={}){
  const group=new THREE.Group();group.name=`chunk:${descriptor.id}`;
- const ground=terrain(descriptor,sampleWorld,holes),groundMeshes=ground?[ground]:[];if(ground)group.add(ground);
+ const {ground,sea}=terrain(descriptor,holes),groundMeshes=[ground];group.add(ground);if(sea)group.add(sea);
  if(detail){
   const stone=batch(rockMaterial,'hard-shore-stone'),plants=batch(foliageMaterial,'botanical-verges');
   // Lead filters paid-occupancy conflicts in descriptor solids for BOTH physics
   // and presentation. Never silently hide a hard rock only in its visible mesh.
   for(const solid of descriptor.solids){const color=colors[solid.material]??colors.paleStone;for(let i=0;i<solid.indices.length;i+=3){const points=solid.indices.slice(i,i+3).map(n=>solid.vertices.slice(n*3,n*3+3));stone.triangle(...points,color,.91+(i%9)*.012);}}
   for(const d of descriptor.decorations){if(d.kind.startsWith('habitat-'))continue;if(excludedCells.some(p=>Math.abs(d.x-p.gx*2)<1.7&&Math.abs(d.z-p.gz*2)<1.7))continue;botanical(plants,d);}
-  for(const mesh of [stone.finish(),plants.finish()])if(mesh)group.add(mesh);
+  const stoneMesh=stone.finish(),plantMesh=plants.finish();if(stoneMesh)group.add(stoneMesh);
+  // Soft passable cover must not swallow a dig/harvest ray aimed through its blades.
+  if(plantMesh){plantMesh.raycast=()=>{};group.add(plantMesh);}
  }
  let disposed=false;
  const dispose=()=>{if(disposed)return;disposed=true;group.traverse(o=>{if(o.isMesh)o.geometry.dispose();});group.clear();};

@@ -1,6 +1,6 @@
+import {chunkAt} from './surface-grid.js';
 import {Group} from 'three';
 import {createWorldChunk} from './world-visuals.js';
-import {sampleWorld} from './world-layout.js';
 import {worldChunk,nearbyChunks,descriptorCount} from './world-data.js';
 import {convexSolid} from './reef-collision.js';
 import {adjacentCells} from './building.js';
@@ -19,7 +19,7 @@ export function createWorldRuntime(state){
  function remove(k){dirty.delete(k);const entry=cache.get(k);if(!entry)return;group.remove(entry.mesh.group);entry.mesh.dispose();cache.delete(k);version++;}
  function queue(cx,cz,detail,priority=0){const k=key(cx,cz),old=cache.get(k);if(old?.detail===detail&&!dirty.has(k))return;jobs.set(k,{cx,cz,detail,priority:old?.detail&&!detail?-2:priority});}
  function build(job){const started=performance.now(),{cx,cz,detail}=job,k=key(cx,cz),local=localCells(cx,cz),descriptor=clearDescriptor(worldChunk(cx,cz),local),holes=local.filter(p=>state.plots[`${p.gx},${p.gz}`]?.phase==='hole');
-  const mesh=createWorldChunk(descriptor,{sampleWorld,excludedCells:local,holes,detail});let bytes=0,triangles=0;
+  const mesh=createWorldChunk(descriptor,{excludedCells:local,holes,detail});let bytes=0,triangles=0;
   mesh.group.traverse(o=>{if(o.isMesh){for(const a of Object.values(o.geometry.attributes))bytes+=a.array.byteLength;bytes+=o.geometry.index?.array.byteLength??0;triangles+=(o.geometry.index?.count??o.geometry.attributes.position.count)/3;}});
   remove(k);dirty.delete(k);mesh.group.visible=active.has(k);group.add(mesh.group);cache.set(k,{mesh,detail,cx,cz,last:clock,bytes,triangles});version++;const duration=performance.now()-started;generationMs+=duration;lastJobs.push(duration);if(lastJobs.length>180)lastJobs.shift();
  }
@@ -29,7 +29,7 @@ export function createWorldRuntime(state){
   cells=next;cellKeys=keys;
   for(const cell of changed){const [gx,gz]=cell.split(',').map(Number);for(const d of nearbyChunks(gx*2,gz*2,3)){const k=d.id.slice(3).replace(':',',');hulls.delete(k);dirty.add(k);const entry=cache.get(k);if(entry){const pending=jobs.get(k);jobs.set(k,{cx:entry.cx,cz:entry.cz,detail:pending?.detail??entry.detail,priority:pending?.priority===-2?-2:-1});}}}
  }
- function update(x,z){const updateStart=performance.now(),generationStart=generationMs;clock++;const cx=Math.floor(x/32),cz=Math.floor(z/32),at=key(cx,cz);
+ function update(x,z){const updateStart=performance.now(),generationStart=generationMs;clock++;const {cx,cz}=chunkAt(x,z),at=key(cx,cz);
   if(at!==centre){centre=at;active.clear();jobs.clear();for(let dz=-4;dz<=4;dz++)for(let dx=-4;dx<=4;dx++){const nx=cx+dx,nz=cz+dz,k=key(nx,nz),detail=Math.abs(dx)<=2&&Math.abs(dz)<=2;active.add(k);queue(nx,nz,detail,Math.hypot(dx,dz)+(detail?0:1));const e=cache.get(k);if(e)e.last=clock;}
    for(const [k,e] of cache)e.mesh.group.visible=active.has(k);
   }

@@ -15,7 +15,7 @@ test('active terrain/caches stay bounded across routes and revisits, while local
 
 test('outer garden hole bottom covers its full cell and every face carries the same plot identity',async()=>{
  const {plotSurfaces}=await import('../src/plot-surfaces.js');const {BoxGeometry,MeshBasicMaterial,Group}=await import('three');
- const p={gx:-4,gz:-33,phase:'hole'},material=new MeshBasicMaterial(),parts=plotSurfaces(p,{'-4,-33':p},{wallGeometry:new BoxGeometry(2,.6,.012),wallMaterial:material,soilGeometry:new BoxGeometry(1.82,.035,1.82),soilMaterial:material}),group=new Group();group.add(...parts);group.updateMatrixWorld(true);
+ const p={gx:-4,gz:-33,baseY:0,phase:'hole'},material=new MeshBasicMaterial(),parts=plotSurfaces(p,{'-4,-33':p},{wallGeometry:new BoxGeometry(2,.6,.012),wallMaterial:material,soilGeometry:new BoxGeometry(1.82,.035,1.82),soilMaterial:material}),group=new Group();group.add(...parts);group.updateMatrixWorld(true);
  for(const dx of [-.98,-.93,0,.93,.98]){const hits=new Raycaster(new Vector3(-8+dx,1,-66),new Vector3(0,-1,0)).intersectObjects(parts);assert.ok(hits.length,`no open bottom at ${dx}`);assert.equal(hits[0].object.userData.plot,'-4,-33');assert.ok(hits[0].point.y>=-.601);}
 });
 

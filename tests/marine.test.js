@@ -49,23 +49,17 @@ test('actual reef and occupied house clearance survive sustained routes with bou
  for(const kind of ['crab','turtle','octopus','fish']){assert.ok(states.get(kind).has('move'));assert.ok(states.get(kind).has('forage'));}
 });
 
-test('sessile pockets and the bounded octopus territory never reserve any construction pad or doorway',()=>{
- const s=make(),permanent=s.animals.filter(a=>['starfish','anemone','octopus'].includes(a.kind));
- assert.equal(permanent.length,10);
- for(let i=0;i<900;i++){
-  s.update(1/30);
-  for(const a of permanent)for(const p of TERRAIN.pads){const r=a.profile.radius;
-   assert.ok(a.x+r<=p.minGX*2-2||a.x-r>=p.maxGX*2+2||a.z+r<=p.minGZ*2-2||a.z-r>=p.maxGZ*2+2,`${a.id} permanently blocks pad`);
-  }
- }
+test('sessile pockets use sampled support without reserved construction pads',()=>{
+ const s=make(),permanent=s.animals.filter(a=>['starfish','anemone','octopus'].includes(a.kind));assert.equal(permanent.length,10);
+ for(let i=0;i<900;i++){s.update(1/30);for(const a of permanent){assert.ok(s.clearAt(a,a.x,a.y,a.z));assert.ok(Math.abs(a.y-terrainHeight(a.x,a.z)-.008)<1e-9);}}
 });
 
-test('crab contact follows the shore tangent and gait phase follows actual travel, stopping during caution',()=>{
+test('crab contact follows its sampled terrace and gait phase follows actual travel, stopping during caution',()=>{
  const s=make(),a=s.animals.find(a=>a.id==='crab:0'),start={x:a.x,phase:a.phase};
  for(let i=0;i<660;i++)s.update(1/60);
  assert.ok(Math.abs(a.x-start.x)>.3);assert.equal(a.z,a.homeZ);
  assert.ok(Math.abs(a.phase-start.phase-(a.x-start.x)*Math.cos(a.yaw)/a.profile.stride)<1e-9);
- assert.ok(Math.abs(a.y-terrainHeight(a.x,a.z)-.008)<1e-9);assert.ok(Math.abs(a.pitch)>.2);
+ assert.ok(Math.abs(a.y-terrainHeight(a.x,a.z)-.008)<1e-9);assert.equal(a.pitch,0);assert.equal(a.roll,0);
  const phase=a.phase;for(let i=0;i<180;i++)s.update(1/60,{x:a.x,y:a.y+.2,z:a.z});
  assert.equal(a.phase,phase);assert.equal(a.activity,'alert');assert.equal(a.speed,0);
 });

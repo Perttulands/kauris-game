@@ -1,6 +1,6 @@
 import test from 'node:test';import assert from 'node:assert/strict';
-import {freshState,plant,dig,fill,serialize,deserialize,validateBuild} from '../src/state.js';
-import {DISCOVERIES,discover,seedUnlocked,setOutfit,gardenAttractors} from '../src/garden.js';
+import {freshState,plant,dig,fill,serialize,deserialize} from '../src/state.js';
+import {discover,setOutfit,gardenAttractors} from '../src/garden.js';
 import {reconcileResidents} from '../src/residents.js';
 test('eight starters; locked seeds are authoritative, each discovery records once without money',()=>{
  const s=freshState();assert.equal(Object.keys(s.plots).length,8);dig(s,0,0);assert.equal(plant(s,0,0,'golden').ok,false);const before={...s.inventory};
@@ -10,11 +10,9 @@ test('variation survives reload and old plants receive stable variation',()=>{
  const s=freshState();dig(s,0,0);plant(s,0,0,'birch');fill(s,0,0);const v=s.plots['0,0'].variation;assert.equal(deserialize(serialize(s)).plots['0,0'].variation,v);
  delete s.plots['0,0'].variation;const a=deserialize(serialize(s)),b=deserialize(serialize(s));assert.equal(a.plots['0,0'].variation,b.plots['0,0'].variation);a.plots['0,0'].variation=20;assert.throws(()=>deserialize(serialize(a)));
 });
-test('round1 paid houses/player win over discoveries; suppression and gifts are idempotent',()=>{
- const s=freshState();delete s.contentRevision;delete s.discoveryHidden;delete s.discoveries;delete s.unlockedSeeds;
- s.buildings=[{id:1,kind:'floor',material:'wood',cost:2,gx:0,gz:-9,rotation:0,level:0}];s.nextId=2;s.inventory.wood-=2;s.player.x=23;s.player.z=0;const before=structuredClone(s),a=deserialize(serialize(s));
- assert.deepEqual(a.buildings,before.buildings.map(b=>({...b,baseY:0})));assert.deepEqual(a.inventory,before.inventory);assert.deepEqual(a.wildRemoved,before.wildRemoved);assert.deepEqual(a.player,before.player);assert.ok(a.discoveryHidden.includes('old-hollow'));assert.ok(a.discoveryHidden.includes('star-grotto'));assert.ok(seedUnlocked(a,'golden'));assert.deepEqual(deserialize(serialize(a)),a);
- const d=DISCOVERIES[0];assert.equal(dig(a,Math.round(d.x/2),Math.round(d.z/2)).ok,false);assert.equal(validateBuild(a,{gx:-5,gz:9,kind:'floor',material:'wood',level:0,rotation:0}).ok,false);
+test('legacy schema is rejected; reset discoveries stay available for exploration',()=>{
+ const s=freshState();assert.deepEqual(s.discoveryHidden,[]);assert.deepEqual(s.unlockedSeeds,[]);
+ s.version=1;assert.throws(()=>deserialize(serialize(s)),/Unsupported save/);
 });
 test('outfit persists per identity without changing other residents; malformed palette rejected',()=>{
  const s=freshState();const house=gx=>[{kind:'roof',gx,gz:0,level:1,rotation:0},...[0,1,2,3].map(rotation=>({kind:rotation===0?'door':'wall',gx,gz:0,level:0,rotation}))];

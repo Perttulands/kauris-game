@@ -8,9 +8,18 @@ import {execFileSync} from 'node:child_process';
 const sha=b=>createHash('sha256').update(b).digest('hex');
 const source=resolve(process.argv[2]||'dist'),output=resolve(process.argv[3]||'artifacts');
 if(output===source||output.startsWith(source+'/'))throw Error('Output must be outside dist');
+// Validate only the reviewed audio bank; other audio-directory files stay private.
+const recordedAudio=new Set(['audio/manifest.json','audio/CREDITS.md',
+ 'audio/shore-loop.ogg','audio/water-loop.ogg','audio/bell-0.ogg']);
+for(const [kind,count] of [['step-soft',6],['step-hard',6],['step-wood',3],
+                          ['dig',3],['chop',3],['fill',3],['build',3],['swim',3]])
+ for(let i=0;i<count;i++)recordedAudio.add('audio/'+kind+'-'+i+'.ogg');
+function allowedBuildPath(path){
+ return (recordedAudio.has(path)||/^(index\.html|assets\/[A-Za-z0-9_./-]+\.(js|css|glb|webp|png|jpg|svg|ogg|wav|mp3))$/.test(path))&&!path.split('/').some(x=>x.startsWith('.'));
+}
 async function walk(dir){const result=[];for(const name of (await readdir(dir)).sort()){const p=join(dir,name),s=await lstat(p);if(s.isSymbolicLink())throw Error('Symlink in dist: '+p);if(s.isDirectory())result.push(...await walk(p));else if(s.isFile())result.push(relative(source,p));else throw Error('Unexpected file type: '+p);}return result;}
 const files=await walk(source),blobs=new Map();
-for(const path of files){if(!/^(index\.html|assets\/[A-Za-z0-9_./-]+\.(js|css|glb|webp|png|jpg|svg|ogg|wav|mp3))$/.test(path)||path.split('/').some(x=>x.startsWith('.')))throw Error('Unexpected build file: '+path);blobs.set(path,await readFile(join(source,path)));}
+for(const path of files){if(!allowedBuildPath(path))throw Error('Unexpected build file: '+path);blobs.set(path,await readFile(join(source,path)));}
 if(!blobs.has('index.html'))throw Error('Missing index.html');
 // Exact referenced Vite output paths, never a blanket /assets cache rule.
 const html=blobs.get('index.html').toString(),immutable=[...html.matchAll(/(?:src|href)="(\/assets\/[A-Za-z0-9_-]+-[A-Za-z0-9_-]{8}\.(?:js|css))"/g)].map(m=>m[1]);

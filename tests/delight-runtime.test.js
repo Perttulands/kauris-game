@@ -21,17 +21,20 @@ test('lamp-pattern response ignores creation order; bell impulse and held pour m
  const {sys,events}=system([prop('gutter',1,0),prop('waterWheel',2,1),prop('bell',3,2)]);sys.pour(1,.1);sys.update(.1,.1);assert.equal(sys.models.get(1).getObjectByName('pour-stream').visible,true);assert.ok(sys.models.get(2).getObjectByName('rotor').rotation.z!==0);assert.ok(events.some(e=>e[0]==='bell'));sys.update(.1,.2);assert.notEqual(sys.models.get(3).getObjectByName('bell-pivot').rotation.z,0);for(let i=0;i<70;i++)sys.update(.1,.3+i*.1);assert.equal(sys.motion.get(2).flow,0);
 });
 test('crab reaches placed shelter physically, settles inside and responds to bell without position jump',()=>{
- const shelter={...prop('crabShelter',1,3,20),baseY:-7.2},visited=[];const life=createMarineLife({profiles:MARINE_PROFILES});life.setDelights([shelter],{claim:()=>true,release:()=>{},visited:id=>visited.push(id)});const a=life.animals.find(a=>a.id==='crab:2');let maxStep=0,inside=false,greeted=false;
+ const shelter={...prop('crabShelter',1,3,20),rotation:3,baseY:terrainHeight(6,40)},visited=[];const life=createMarineLife({profiles:MARINE_PROFILES});life.setDelights([shelter],{claim:()=>true,release:()=>{},visited:id=>visited.push(id)});const a=life.animals.find(a=>a.id==='crab:2');let maxStep=0,inside=false,greeted=false;
  for(let i=0;i<1600;i++){const x=a.x,z=a.z;life.update(.1,null);maxStep=Math.max(maxStep,Math.hypot(a.x-x,a.z-z));if(Math.hypot(a.x-6,a.z-40)<.06){inside=true;if(!greeted){life.greet({x:6,z:42});life.update(.1,null);assert.equal(a.activity,'alert');greeted=true;}}}assert.ok(visited.length>0,JSON.stringify(a));assert.ok(inside&&greeted);assert.ok(maxStep<=.031);assert.ok(a.homeCooldown>0);
 });
 test('fish reach either exterior window axis while panes and home interiors stay solid',()=>{
  for(const axis of [0,1]){
-  const part=(kind,rotation=0,id=1)=>({id,kind,gx:0,gz:24,baseY:-7.2,level:kind==='roof'?1:0,rotation,material:'diamond'});
+  const part=(kind,rotation=0,id=1)=>({id,kind,gx:5,gz:24,baseY:terrainHeight(10,48)+.6,level:kind==='roof'?1:0,rotation,material:'diamond'});
   const buildings=[part('floor',0,1),part('roof',0,2),...[0,1,2,3].map(r=>part(r===axis?'window':r===(axis+2)%4?'door':'wall',r,3+r))];
   const life=createMarineLife({profiles:MARINE_PROFILES,buildings}),window=life.windows[0],fish=life.animals.find(a=>a.kind==='fish');
+  // Place the approach fixture clear of the sampled-terrain turtle/school spawn.
+  Object.assign(fish,{x:window.x+window.nx*1.5,y:window.y,z:window.z+window.nz*1.5});
+  assert.ok(life.clearAt(fish,fish.x,fish.y,fish.z),'Approach starts clear of terrain and other animals');
   assert.ok(life.clearAt(fish,window.x,window.y,window.z,false),'Empty water outside the glass is reachable');
   assert.equal(life.clearAt(fish,window.x-window.nx*.95,window.y,window.z-window.nz*.95,false),false,'Physical glass still blocks');
-  assert.equal(life.clearAt(fish,0,window.y,48,false),false,'Home interior stays reserved');
+  assert.equal(life.clearAt(fish,10,window.y,48,false),false,'Home interior stays reserved');
   let visitor=null,departed=false,maxStep=0;
   for(let i=0;i<800;i++){
    const before=new Map(life.animals.map(a=>[a.id,[a.x,a.y,a.z]]));life.update(.1,null);
@@ -42,7 +45,9 @@ test('fish reach either exterior window axis while panes and home interiors stay
   }
   assert.ok(visitor,'A real fish reaches the window');assert.ok(departed,'The visit ends and returns to ordinary movement');assert.ok(maxStep<.08,'No teleport through the reservation');
   const incomplete=createMarineLife({profiles:MARINE_PROFILES,buildings:buildings.filter(b=>b.kind!=='roof')});
-  assert.equal(incomplete.clearAt(fish,window.x,window.y,window.z,false),false,'Unfinished construction retains its conservative reserve');
+  assert.ok(incomplete.clearAt(fish,window.x,window.y,window.z,false),'Paid floor identifies the unfinished interior; exterior water stays reachable');
+  assert.equal(incomplete.clearAt(fish,10,window.y,48,false),false,'Unfinished interior remains reserved');
+  assert.equal(incomplete.clearAt(fish,window.x-window.nx*.95,window.y,window.z-window.nz*.95,false),false,'Unfinished physical glass stays solid');
  }
 });
 test('whale remains continuously in reachable water with full vertical and horizontal envelope',()=>{

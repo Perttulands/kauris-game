@@ -2,7 +2,7 @@ import {TERRAIN,terrainHeight} from './terrain.js';
 import {solidInterval} from './reef-collision.js';
 import {propBoxes,propAnchor} from './delights.js';
 import {findHomes} from './residents.js';
-import {adjacentCells,baseOf,buildingBoxes,canonicalPiece} from './building.js';
+import {adjacentCells,baseOf,buildingBoxes,canonicalPiece,elevation} from './building.js';
 
 // Transient inhabitants: never read or write inventories, plots or saved actors.
 // The visual factory supplies conservative bounds including every moving limb.
@@ -13,13 +13,14 @@ const swimming=kind=>kind==='fish'||kind==='turtle';
 const still=kind=>kind==='starfish'||kind==='anemone';
 export const MARINE_COUNTS=Object.freeze({fish:12,crab:3,turtle:1,octopus:1,starfish:6,anemone:3});
 
-function occupied(buildings){
- const boxes=buildings.flatMap(buildingBoxes),cells=new Map(),homes=findHomes(buildings);
+function occupied(buildings,context=buildings){
+ const boxes=buildings.flatMap(buildingBoxes),cells=new Map(),homes=findHomes(context);
  for(const b of buildings){
   const adjacent=adjacentCells(b),nearHomes=homes.filter(h=>h.baseY===baseOf(b)&&adjacent.some(c=>h.cells.includes(`${c.gx},${c.gz}`)));
-  // A completed boundary protects its interior, not the empty water outside it.
-  // Keep every physical pane/wall solid and conservative unfinished reservations.
-  const reserved=nearHomes.length?adjacent.filter(c=>nearHomes.some(h=>h.cells.includes(`${c.gx},${c.gz}`))):adjacent;
+  // Physical boundaries stay solid. A paid floor identifies the protected room
+  // even before its roof is finished; do not reserve empty exterior water.
+  const floorSide=adjacent.filter(c=>context.some(f=>f.kind==='floor'&&f.gx===c.gx&&f.gz===c.gz&&elevation(f)===elevation(b)));
+  const reserved=nearHomes.length?adjacent.filter(c=>nearHomes.some(h=>h.cells.includes(`${c.gx},${c.gz}`))):floorSide.length?floorSide:adjacent;
   for(const c of reserved){
   const key=`${c.gx},${c.gz}:${baseOf(b)}`,base=baseOf(b),old=cells.get(key);
   if(old)old.maxY=Math.max(old.maxY,base+(b.level+1)*2.4+.3);
@@ -27,32 +28,24 @@ function occupied(buildings){
  }}
  return boxes.concat([...cells.values()]);
 }
-export function createMarineLife({profiles,reefSolids=[],buildings=[]}){
+export function createMarineLife({profiles,reefSolids=[],buildings=[],solidsAt=()=>[]}){
  let time=0,remainder=0,obstacles=occupied(buildings),props=[],toys=null,windows=[];
  const animals=[],schools=[{x:3,y:-4.6,z:42,at:0},{x:-4,y:-4.8,z:48,at:0},{x:2,y:-4.1,z:55,at:0}];
  const schoolRoutes=[[[3,42],[6,45],[1,46],[-1,41]],[[-4,48],[-6,51],[-2,53],[0,48]],[[2,55],[4,57],[0,58],[-2,54]]];
  const turtleRoute=[[-1,46],[2,43],[4,49],[-1,53],[-4,48]];
 
- // Circle broad phase encloses yaw and all limb poses. Ground tangent tilt is
- // included vertically; footprint samples reject curvature that would float feet.
+ // Circle broad phase encloses yaw and all limb poses. Ground footprints must
+ // fit one terrace; swimmers include their pitch/roll envelope above the seabed.
  function clearAt(a,x,y,z,separation=true){
-  const p=a.profile,slope=a.swims?0:(terrainHeight(x,z+.1)-terrainHeight(x,z-.1))/.2;
-  const r=p.radius+Math.max(Math.abs(p.minY),Math.abs(p.maxY))*(a.swims?.32:Math.abs(slope)/Math.sqrt(1+slope*slope));
-  if(x-r<TERRAIN.minX||x+r>TERRAIN.maxX||z-r<28||z+r>TERRAIN.maxZ)return false;
-  // Sessile life and the small octopus territory must never reserve construction
-  // cells indefinitely. Leave the entire pad plus a one-metre doorway margin.
-  if(still(a.kind)||a.kind==='octopus')for(const pad of TERRAIN.pads){
-   if(x+r>pad.minGX*2-2&&x-r<pad.maxGX*2+2&&z+r>pad.minGZ*2-2&&z-r<pad.maxGZ*2+2)return false;
-  }
+  const p=a.profile,r=p.radius+(a.swims?Math.max(Math.abs(p.minY),Math.abs(p.maxY))*.32:0);
+  if(x-r<TERRAIN.minX||x+r>TERRAIN.maxX||z-r<TERRAIN.minZ||z+r>TERRAIN.maxZ)return false;
   let low=y+p.minY-(a.swims?.32*r:0),high=y+p.maxY+(a.swims?.32*r:0);
+  const floors=[[0,0],[r,0],[-r,0],[0,r],[0,-r]].map(([dx,dz])=>terrainHeight(x+dx,z+dz));
   if(!a.swims){
-   const h=terrainHeight(x,z),s=(terrainHeight(x,z+.1)-terrainHeight(x,z-.1))/.2;
-   if(Math.abs(s)>1.05||Math.abs(y-h-.008)>.015)return false;
-   for(let i=-1;i<=1;i++)if(Math.abs(terrainHeight(x,z+i*r)-h-s*i*r)>.085)return false;
-   const tilt=r*Math.abs(s)/Math.sqrt(1+s*s);low-=tilt;high+=tilt;
-  }else if(low<terrainHeight(x,z-r)+.08)return false;
+   if(Math.abs(y-floors[0]-.008)>.015||Math.max(...floors)-Math.min(...floors)>.085)return false;
+  }else if(low<Math.max(...floors)+.08)return false;
   if(a.kind!=='crab'&&high>TERRAIN.waterY-.12)return false;
-  for(const s of reefSolids){
+  for(const s of [...reefSolids,...solidsAt(x,z)]){
    if(x+r<s.minX||x-r>s.maxX||z+r<s.minZ||z-r>s.maxZ||low>=s.maxY+.015||high<=s.minY-.015)continue;
    const interval=solidInterval(s,x,z,r);
    if(interval&&high>interval.minY-.015&&low<interval.maxY+.015)return false;
@@ -64,6 +57,11 @@ export function createMarineLife({profiles,reefSolids=[],buildings=[]}){
   }
   return true;
  }
+ function swimY(a,x,z,wanted){
+  const p=a.profile,r=p.radius+Math.max(Math.abs(p.minY),Math.abs(p.maxY))*.32;
+  const floor=Math.max(...[[0,0],[r,0],[-r,0],[0,r],[0,-r]].map(([dx,dz])=>terrainHeight(x+dx,z+dz)));
+  return clamp(wanted,floor+.45-p.minY+.32*r,TERRAIN.waterY-.13-p.maxY-.32*r);
+ }
  function add(kind,index,x,y,z,yaw=0){
   const profile=profiles[kind];if(!profile)return;
   const a={id:`${kind}:${index}`,kind,index,variant:kind==='fish'?Math.floor(index/4)%2:index,profile,swims:swimming(kind),x,y,z,yaw,pitch:0,roll:0,speed:0,turn:0,phase:index*.173,radius:profile.radius,verticalMargin:0,activity:'idle',active:false,homeX:x,homeZ:z,target:0,avoid:0,avoidSide:index%2?1:-1,crabSide:1};
@@ -71,19 +69,18 @@ export function createMarineLife({profiles,reefSolids=[],buildings=[]}){
   // relocating an animal through walls when a paid building changes.
   for(let i=0;i<33;i++){
    const radius=i===0?0:Math.ceil(i/8)*.75,theta=i*2.399963;
-   const nx=x+Math.cos(theta)*radius,nz=z+Math.sin(theta)*radius,ny=a.swims?y:terrainHeight(nx,nz)+.008;
+   const nx=x+Math.cos(theta)*radius,nz=z+Math.sin(theta)*radius,ny=a.swims?swimY(a,nx,nz,y):terrainHeight(nx,nz)+.008;
    if(!clearAt(a,nx,ny,nz))continue;
    Object.assign(a,{x:nx,y:ny,z:nz,homeX:nx,homeZ:nz,active:true});break;
   }
   if(a.active){animals.push(a);poseGround(a);}
  }
  function poseGround(a){
-  const s=a.swims?0:(terrainHeight(a.x,a.z+.1)-terrainHeight(a.x,a.z-.1))/.2;
-  const tilt=a.swims?.32:Math.abs(s)/Math.sqrt(1+s*s);
-  a.radius=a.profile.radius+Math.max(Math.abs(a.profile.minY),Math.abs(a.profile.maxY))*tilt;
-  a.verticalMargin=a.radius*tilt;
-  if(a.swims)return;
-  a.pitch=-Math.atan(s*Math.cos(a.yaw));a.roll=Math.atan(-s*Math.sin(a.yaw));
+  a.radius=a.profile.radius+(a.swims?Math.max(Math.abs(a.profile.minY),Math.abs(a.profile.maxY))*.32:0);
+  a.verticalMargin=a.swims?a.radius*.32:0;
+  // Ground animals stand on one terrace. They stop at a step rather than tilt
+  // into an imaginary continuous slope or snap across a .3m cell edge.
+  if(!a.swims){a.pitch=0;a.roll=0;}
  }
  for(let i=0;i<12;i++){const group=Math.floor(i/4),s=schools[group],j=i%4;add('fish',i,s.x+(j%2?1:-1)*.65,s.y+(j>1?.32:-.26),s.z+(j>1?.8:-.8),.4+group);}
  add('crab',0,2.8,0,32.6,Math.PI);add('crab',1,-2,0,36.8,Math.PI);add('crab',2,3.2,0,40,Math.PI);
@@ -115,6 +112,7 @@ export function createMarineLife({profiles,reefSolids=[],buildings=[]}){
   const desired=Math.atan2(dx,dz)+(a.avoid>time?a.avoidSide*1.2:0),before=a.yaw;
   a.yaw+=clamp(angle(desired-a.yaw),-dt*(a.kind==='turtle'?.65:1.65),dt*(a.kind==='turtle'?.65:1.65));
   a.turn=clamp(angle(a.yaw-before)/(dt*1.2),-1,1);
+  ty=a.swims?swimY(a,a.x,a.z,ty):ty;
   const speed=wanted*Math.max(.12,Math.cos(angle(desired-a.yaw))),vy=a.swims?clamp((ty-a.y)*.65,-.22,.22):0;
   move(a,Math.sin(a.yaw)*speed,vy,Math.cos(a.yaw)*speed,dt);
   if(a.swims){a.pitch+=(clamp(-Math.atan2(vy,Math.max(.1,a.speed)),-.16,.16)-a.pitch)*Math.min(1,dt*2);a.roll+=(-a.turn*(a.kind==='turtle'?.16:.12)-a.roll)*Math.min(1,dt*3);}
@@ -200,13 +198,13 @@ export function createMarineLife({profiles,reefSolids=[],buildings=[]}){
  return {
   animals,profiles,
   update(dt,player){if(!(dt>0))return;remainder+=Math.min(dt,.1);while(remainder>=STEP){step(STEP,player);remainder-=STEP;}},
-  setBuildings(next){obstacles=occupied(next);setWindows(next);},
+  setBuildings(next){buildings=next;obstacles=occupied(next);setWindows(next);},
   setDelights(next,system){props=next;toys=system;},
   greet(point){for(const a of animals)if(a.kind==='crab'&&a.shelterId&&Math.hypot(a.x-point.x,a.z-point.z)<5)a.greetUntil=time+3;},
   get windows(){return windows;},
   clearAt,
   overlapsBuilding(piece){
-   const candidate=occupied([piece]);
+   const candidate=occupied([piece],[...buildings,piece]);
    return animals.some(a=>candidate.some(b=>a.x+a.radius>b.minX&&a.x-a.radius<b.maxX&&a.z+a.radius>b.minZ&&a.z-a.radius<b.maxZ&&a.y+a.profile.maxY+a.verticalMargin>b.minY&&a.y+a.profile.minY-a.verticalMargin<b.maxY));
   },
   snapshot:()=>animals.map(({id,kind,index,variant,x,y,z,yaw,pitch,roll,speed,turn,phase,activity,profile,radius,verticalMargin,shelterId,visitStage,windowId,greetUntil})=>({id,kind,index,variant,x,y,z,yaw,pitch,roll,speed,turn,phase,activity,radius,shelterId,visitStage,windowId,greeting:(greetUntil??0)>time,minY:profile.minY-verticalMargin,maxY:profile.maxY+verticalMargin})),

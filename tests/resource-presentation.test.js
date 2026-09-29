@@ -25,10 +25,10 @@ test('distant paid trees retain growth-sized silhouettes without changing the pa
 });
 
 test('scaled planted silhouette stems rest on the ground',()=>{
- const state=freshState();state.plots={'0,0':{gx:0,gz:0,phase:'filled',seed:'oak',growth:.25,water:1,variation:0}};
+ const state=freshState();state.plots={'0,0':{gx:0,gz:0,baseY:.6,phase:'filled',seed:'oak',growth:.25,water:1,variation:0}};
  const scene=new Scene(),horizon=createResourceHorizon(scene);horizon.update(state,60,0,new Set());
  const at=horizon.snapshot().ids.indexOf('plot:0,0');assert.ok(at>=0);
- const matrix=new Matrix4();scene.children[0].getMatrixAt(at,matrix);
- const box=scene.children[0].geometry;box.computeBoundingBox();
- assert.ok(Math.abs(box.boundingBox.clone().applyMatrix4(matrix).min.y)<1e-6);
+ const mesh=scene.getObjectByName('resource-horizon:oak'),matrix=new Matrix4();
+ let found=false;for(let i=0;i<mesh.count;i++){mesh.getMatrixAt(i,matrix);if(Math.abs(matrix.elements[12])+Math.abs(matrix.elements[14])<1e-8){found=true;assert.ok(Math.abs(matrix.elements[13]-.6)<1e-6);assert.ok(Math.abs(matrix.elements[0]-.25)<1e-6);}}
+ assert.ok(found,'the planted oak uses its sampled root and growth scale');
 });

@@ -25,7 +25,7 @@ test('preference is independent of saves, regional browser fallback, immediate s
 });
 test('domain results carry semantic codes and localized parameters without changing accounting',()=>{
  const state=freshState(),results=[dig(state,0,0),plant(state,0,0,'pine'),fill(state,0,0),water(state,0,0,.1),harvest(state,0,0),dig(state,99,0)];
- const b={gx:2,gz:2,kind:'floor',material:'wood',rotation:0,level:0};results.push(build(state,b),validateBuild(state,b),remove(state,state.buildings.at(-1).id));assert.equal(state.inventory.wood,36);
+ state.inventory.wood=2;const b={gx:2,gz:2,kind:'floor',material:'wood',rotation:0,level:0};results.push(build(state,b),validateBuild(state,b),remove(state,state.buildings.at(-1).id));assert.equal(state.inventory.wood,2);
  for(const locale of ['fi','sv','en']){const ui=createI18n({languages:[locale]});for(const result of results){assert.ok(result.code);assert.ok(ui.message(result));assert.ok(!/undefined|\{\w+\}/.test(ui.message(result)));}}
 });
 test('reading selection is ranged, occluded, stable and clears obsolete targets without mutating the hit list',()=>{

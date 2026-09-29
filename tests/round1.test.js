@@ -22,13 +22,15 @@ test('wild occupancy releases after exact one-time yield and survives reload',()
  assert.equal(harvestWild(s,r.id).amount,18);assert.equal(harvestWild(s,r.id).ok,false);assert.equal(s.inventory.wood,before+18);
  const saved=deserialize(serialize(s));assert.ok(!liveWild(saved).some(x=>x.id===r.id));assert.equal(saved.inventory.wood,before+18);assert.ok(build(saved,piece).ok);
 });
-test('legacy migration preserves paid house and player; hides overlapping new world',()=>{
- const s=freshState(),r=WILD_RESOURCES[0];s.wildRemoved=WILD_RESOURCES.map(x=>x.id);s.worldHidden=['windmill'];
- const floor={gx:r.gx,gz:r.gz,kind:'floor',material:'wood',level:0,rotation:0};assert.ok(build(s,floor).ok);assert.ok(build(s,{...floor,kind:'door'}).ok);
- s.player={x:-18,z:-20,yaw:1,pitch:0};const expected=structuredClone(s);delete s.wildRemoved;delete s.worldHidden;
- const migrated=deserialize(serialize(s));assert.deepEqual(migrated.buildings,expected.buildings);assert.deepEqual(migrated.inventory,expected.inventory);assert.deepEqual(migrated.player,{...s.player,y:0});
- assert.ok(migrated.wildRemoved.includes(r.id));assert.ok(migrated.worldHidden.includes(WORLD_OBSTACLES[0].id));
- assert.deepEqual(deserialize(serialize(migrated)),migrated);
+test('reset saves preserve earned paid pieces and reject legacy migration',()=>{
+ const s=freshState(),r=liveWild(s).find(r=>r.kind==='oak');
+ assert.equal(harvestWild(s,r.id).amount,18);
+ const floor={gx:r.gx,gz:r.gz,baseY:r.baseY,kind:'floor',material:'wood',level:0,rotation:0};
+ assert.ok(build(s,floor).ok);assert.ok(build(s,{...floor,kind:'door'}).ok);
+ const loaded=deserialize(serialize(s));assert.deepEqual(loaded.buildings,s.buildings);assert.deepEqual(loaded.inventory,s.inventory);
+ assert.ok(loaded.wildRemoved.includes(r.id));assert.deepEqual(loaded.player,s.player);
+ assert.throws(()=>deserialize(JSON.stringify({...s,version:1})),/Unsupported save/);
+ const missing=structuredClone(s);delete missing.wildRemoved;assert.throws(()=>deserialize(JSON.stringify(missing)),/Invalid world record/);
 });
 test('new save does not silently deplete a live tree merely by reloading nearby',()=>{
  const s=freshState(),r=liveWild(s)[0];s.player.x=r.gx*2+.9;s.player.z=r.gz*2;

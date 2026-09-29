@@ -16,13 +16,13 @@ test('shallow bare ground asks for look-down while fixed named targets retain ap
  assert.equal(farTargetHint(target,{'0,0':{phase:'hole'}},1.7),'target.closer');assert.equal(farTargetHint({...target,outOfReach:false},{},1.7),null);
 });
 test('pure removal preview matches dependency rejection, then exact one-time refunds',()=>{
- const s=freshState();const floor=build(s,piece('floor')).piece,door=build(s,piece('door')).piece,before=serialize(s);
+ const s=freshState();s.inventory.wood=36;const floor=build(s,piece('floor')).piece,door=build(s,piece('door')).piece,before=serialize(s);
  assert.equal(validateRemove(s,floor.id).code,'message.removeAbove');assert.equal(serialize(s),before);
  assert.deepEqual(remove(s,floor.id),validateRemove(s,floor.id));assert.equal(serialize(s),before);
  const check=validateRemove(s,door.id);assert.ok(check.ok);assert.deepEqual(remove(s,door.id),check);assert.ok(validateRemove(s,floor.id).ok);assert.ok(remove(s,floor.id).ok);assert.equal(s.inventory.wood,36);assert.equal(remove(s,floor.id).ok,false);assert.equal(s.inventory.wood,36);
 });
 test('hosted props and occupied raised lifts give the same preview and action rejection',()=>{
- const host=freshState();host.inventory.diamond=20;const floor=build(host,piece('floor')).piece;
+ const host=freshState();host.inventory.wood=2;host.inventory.diamond=20;const floor=build(host,piece('floor')).piece;
  const lamp=placeDelight(host,{kind:'lamp',gx:0,gz:0,rotation:0,baseY:.15,hostId:floor.id});assert.ok(lamp.ok);assert.equal(validateRemove(host,floor.id).code,'message.removeToy');assert.deepEqual(remove(host,floor.id),validateRemove(host,floor.id));assert.ok(removeDelight(host,lamp.prop.id).ok);assert.ok(validateRemove(host,floor.id).ok);
  const s=freshState();s.inventory.iron=20;const lift=placeDelight(s,{kind:'lift',gx:0,gz:0,rotation:0,baseY:0,hostId:null}).prop;assert.ok(lift);lift.liftY=1;
  const before=serialize(s),options={occupied:true},check=validateRemoveDelight(s,lift.id,options);assert.equal(check.code,'message.lowerLift');assert.deepEqual(removeDelight(s,lift.id,options),check);assert.equal(serialize(s),before);
@@ -42,5 +42,5 @@ test('dig preview and action agree on meadow boundary and paid supports without 
  const s=freshState(),before=serialize(s),sea=validateDig(s,1,30);
  assert.equal(sea.code,'message.insideMeadow');assert.equal(sea.ok,false);assert.equal(serialize(s),before);assert.deepEqual(dig(s,1,30),sea);assert.equal(serialize(s),before);
  const legal=validateDig(s,0,3);assert.ok(legal.ok);assert.equal(serialize(s),before);assert.deepEqual(dig(s,0,3),legal);assert.equal(s.plots['0,3'].phase,'hole');assert.equal(validateDig(s,0,3).code,'message.holeReady');
- const b=build(s,piece('floor')).piece;assert.ok(b);const paid=serialize(s),blocked=validateDig(s,0,0);assert.equal(blocked.code,'message.removeBuilding');assert.deepEqual(dig(s,0,0),blocked);assert.equal(serialize(s),paid);
+ s.inventory.wood=2;const b=build(s,piece('floor')).piece;assert.ok(b);const paid=serialize(s),blocked=validateDig(s,0,0);assert.equal(blocked.code,'message.removeBuilding');assert.deepEqual(dig(s,0,0),blocked);assert.equal(serialize(s),paid);
 });

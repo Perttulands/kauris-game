@@ -1,4 +1,4 @@
-import {edgeKey,baseOf} from './building.js';
+import {edgeKey,baseOf,elevation,wallLike} from './building.js';
 import {inWorld,isUnderwaterHome} from './terrain.js';
 export {edgeKey} from './building.js';
 const key=(x,z)=>`${x},${z}`;
@@ -23,18 +23,22 @@ function inspect(cells,walls,roofs){
  return {cells,anchor:cells[0],doors,covered,total,roofCount,complete:covered===total&&doors.length>0&&roofCount===cells.length};
 }
 function findPlaneHomes(buildings){
- const roofs=new Set(buildings.filter(b=>b.kind==='roof'&&b.level===1).map(b=>key(b.gx,b.gz))),walls=wallsOf(buildings);
+ const roofs=new Set(buildings.filter(b=>['roof','floor'].includes(b.kind)&&b.level===1).map(b=>key(b.gx,b.gz))),walls=wallsOf(buildings);
  return components(roofs,walls).map(c=>inspect(c,walls,roofs)).filter(h=>h.complete);
 }
+function atPlane(buildings,baseY){
+ return buildings.map(b=>({...b,level:Math.round((elevation(b)-baseY)/2.4*1e6)/1e6,baseY:0}));
+}
 export function findHomes(buildings){
- return [...new Set(buildings.map(baseOf))].flatMap(baseY=>findPlaneHomes(buildings.filter(b=>baseOf(b)===baseY).map(b=>({...b,baseY:0}))).map(h=>({...h,baseY,habitat:isUnderwaterHome(baseY)?'ocean':'land'})));
+ const planes=[...new Set(buildings.filter(b=>wallLike(b)||b.kind==='floor').map(elevation))];
+ return planes.flatMap(baseY=>findPlaneHomes(atPlane(buildings,baseY)).map(h=>({...h,baseY,habitat:isUnderwaterHome(baseY)?'ocean':'land'})));
 }
 export function houseReadiness(buildings,gx,gz,baseY=0){
- buildings=buildings.filter(b=>baseOf(b)===baseY).map(b=>({...b,baseY:0}));
- const roofs=new Set(buildings.filter(b=>b.kind==='roof'&&b.level===1).map(b=>key(b.gx,b.gz))),floors=buildings.filter(b=>b.kind==='floor'&&b.level===0).map(b=>key(b.gx,b.gz)),walls=wallsOf(buildings);
- const complete=findHomes(buildings).find(h=>h.cells.includes(key(gx,gz)));if(complete)return complete;
+ buildings=atPlane(buildings,baseY);
+ const roofs=new Set(buildings.filter(b=>['roof','floor'].includes(b.kind)&&b.level===1).map(b=>key(b.gx,b.gz))),floors=buildings.filter(b=>b.kind==='floor'&&b.level===0).map(b=>key(b.gx,b.gz)),walls=wallsOf(buildings);
+ const complete=findHomes(buildings).find(h=>h.baseY===0&&h.cells.includes(key(gx,gz)));if(complete)return {...complete,baseY,habitat:isUnderwaterHome(baseY)?'ocean':'land'};
  const group=components(new Set([...roofs,...floors]),walls,false).find(c=>c.includes(key(gx,gz)));
- return group?inspect(group,walls,roofs):null;
+ return group?{...inspect(group,walls,roofs),baseY,habitat:isUnderwaterHome(baseY)?'ocean':'land'}:null;
 }
 export function reconcileResidents(s){
  s.residents??=[];const homes=findHomes(s.buildings),claimed=new Set();let nextId=Math.max(0,...s.residents.map(r=>r.id))+1;
@@ -54,7 +58,7 @@ export function readResidents(raw){
  if(!Array.isArray(raw)||raw.length>400)throw Error('Invalid residents');const ids=new Set();
  return raw.map(r=>{
   if(!r||!Number.isSafeInteger(r.id)||r.id<1||ids.has(r.id)||!Array.isArray(r.cells)||!r.cells.length||r.cells.length>400||r.cells.some(k=>typeof k!=='string'||!/^(-?\d+),(-?\d+)$/.test(k))||typeof r.anchor!=='string'||!r.cells.includes(r.anchor)||!['arriving','home','waiting'].includes(r.status)||!Number.isInteger(r.variant)||r.variant<0||r.variant>3||typeof r.arrived!=='boolean'||typeof r.notified!=='boolean'||!Number.isInteger(r.routeStage)||r.routeStage<0||r.routeStage>2||!((r.x===null&&r.z===null)||(Number.isFinite(r.x)&&Number.isFinite(r.z)&&inWorld(r.x,r.z))))throw Error('Invalid resident identity');
-  if(![0,-7.2].includes(baseOf(r)))throw Error('Invalid resident elevation');
+  if(!Number.isFinite(baseOf(r))||Math.abs(baseOf(r))>1000000)throw Error('Invalid resident elevation');
   if(r.outfit!==undefined&&(!Number.isInteger(r.outfit)||r.outfit<0||r.outfit>3))throw Error('Invalid resident outfit');
   if(r.preference!==undefined&&!['watch','rest','ride'].includes(r.preference)||r.welcomeStage!==undefined&&(!Number.isInteger(r.welcomeStage)||r.welcomeStage<0||r.welcomeStage>2)||r.gifts!==undefined&&typeof r.gifts!=='boolean')throw Error('Invalid resident habit');
   if(r.rideId!==undefined&&r.rideId!==null&&(!Number.isSafeInteger(r.rideId)||r.rideId<1))throw Error('Invalid resident lift');

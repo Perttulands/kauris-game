@@ -62,6 +62,6 @@ The pause menu also has graphics settings and a calmer camera option. Automatic 
 
 ## Explore
 
-Explore beyond the orchard through birch hills, reed bays, beaches and seagrass channels. Gather from wild plants and use flat grassy clearings for gardens and buildings. Paths also lead to unusual seeds. Flowers attract butterflies and bees, while deer and birds visit the garden. Swim from the shore to watch crabs, fish schools, sea turtles and an octopus among the reef's corals, sea stars and anemones. Build a crab shelter on the flat sand before the reef, or make an underwater room with crystal windows to watch the sea life outside.
+Explore beyond the orchard through birch hills, reed bays, beaches and seagrass channels. Gather from wild plants, plant in suitable dry soil, and build on supported ground or the seabed. Paths also lead to unusual seeds. Flowers attract butterflies and bees, while deer and birds visit the garden. Swim from the shore to watch crabs, fish schools, sea turtles and an octopus among the reef's corals, sea stars and anemones. Build a crab shelter on the flat sand before the reef, or make an underwater room with crystal windows to watch the sea life outside.
 
 For a static web release, see [Hosting](HOSTING.md).

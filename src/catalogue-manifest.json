@@ -2,7 +2,7 @@
   "version": 1,
   "width": 160,
   "height": 160,
-  "sourceHash": "0ecf3200fe561bb632d52541201e4a5e609396cee5ef690b3b7bf30f33dfdd05",
+  "sourceHash": "072d3976f54472344474f638f0772dbf3315440287947f199614004ffabf0d4e",
   "pictures": {
     "prop:birdhouse": "assets/catalogue/prop-birdhouse-0cece75aab74.webp",
     "prop:crabShelter": "assets/catalogue/prop-crabShelter-0c06231318b4.webp",
@@ -61,7 +61,7 @@
     "resident:3:3": "assets/catalogue/resident-3-3-1fe899462d4d.webp",
     "seed:oak": "assets/catalogue/seed-oak-6e0021878b44.webp",
     "seed:birch": "assets/catalogue/seed-birch-9653e9458031.webp",
-    "seed:pine": "assets/catalogue/seed-pine-ee7db39b910a.webp",
+    "seed:pine": "assets/catalogue/seed-pine-53faac3144e2.webp",
     "seed:willow": "assets/catalogue/seed-willow-dff52f929fa8.webp",
     "seed:copper": "assets/catalogue/seed-copper-50aa6643245a.webp",
     "seed:iron": "assets/catalogue/seed-iron-cbe52972a173.webp",

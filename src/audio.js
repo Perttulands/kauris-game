@@ -1,157 +1,171 @@
-import {PROFILES,profileKey,synthesize,AUDIO_SAMPLES,PENTATONIC} from './audio-profiles.js';
-export {AUDIO_SAMPLES,PENTATONIC};
-const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
-const finite=(n,fallback)=>Number.isFinite(n)?n:fallback;
-const LIMITS=Object.freeze({continuous:4,foreground:6,world:2});
-export function soundKind(request,material,surface){return profileKey(request,material,surface);}
-export function soundBuffer(context,key){return synthesize(context,key.includes(':')?key:profileKey(key));}
-export function createMix(context,destination=context.destination){
- const input=context.createGain(),compressor=context.createDynamicsCompressor(),limiter=context.createWaveShaper(),output=context.createGain();
- input.gain.value=.55;compressor.threshold.value=-15;compressor.knee.value=12;compressor.ratio.value=6;compressor.attack.value=.006;compressor.release.value=.15;
- const curve=new Float32Array(2049);for(let i=0;i<curve.length;i++){const x=i*2/(curve.length-1)-1;curve[i]=Math.tanh(x*1.4)/1.4;}
- limiter.curve=curve;limiter.oversample='2x';output.gain.value=1;
- input.connect(compressor).connect(limiter).connect(output).connect(destination);
- input.output=output;input.dispose=()=>{for(const n of [input,compressor,limiter,output])try{n.disconnect();}catch{}};
- return input;
-}
-export function scheduleSound(context,mix,key,{at=context.currentTime,volume=1,pan=0,loop=false,buffer,attack=.008}={}){
- let source,gain,panner,disposed=false;
- const dispose=()=>{if(disposed)return;disposed=true;for(const n of [source,gain,panner])try{n?.disconnect();}catch{}};
- try{
-  source=context.createBufferSource();gain=context.createGain();panner=context.createStereoPanner();source.buffer=buffer??soundBuffer(context,key);source.loop=loop;
-  gain.gain.setValueAtTime(0,at);gain.gain.linearRampToValueAtTime(volume,at+attack);panner.pan.value=pan;
-  source.connect(gain).connect(panner).connect(mix);source.start(at);if(!loop)source.stop(at+source.buffer.duration);
-  return {source,gain,panner,dispose};
- }catch(error){try{source?.stop();}catch{}dispose();throw error;}
-}
-function ramp(param,value,at,seconds){
- if(param.cancelAndHoldAtTime)param.cancelAndHoldAtTime(at);
- else {const current=param.value;param.cancelScheduledValues(at);param.setValueAtTime(current,at);}
- param.linearRampToValueAtTime(value,at+seconds);
+// Recorded-only audio. Gameplay never waits for assets and late loads never replay intent.
+const clamp=(v,a=0,b=1)=>Math.max(a,Math.min(b,v));
+const finite=(v,f=0)=>Number.isFinite(v)?v:f;
+const ROOT=`${import.meta.env?.BASE_URL??'/'}audio/`;
+const MAX_BYTES=2*1024*1024,MAX_DECODED=16*1024*1024,MAX_VOICES=12;
+const ACTIONS=Object.freeze({step:{gain:.48,rate:.34},dig:{gain:.8,rate:.15},fill:{gain:.85,rate:.15},plant:{bank:'fill',gain:.45,rate:.15},chop:{gain:.85,rate:.15},build:{gain:.65,rate:.15},remove:{bank:'build',gain:.5,rate:.15},swim:{gain:.65,rate:.65},bell:{gain:.45,rate:.6}});
+function target(param,value,time,seconds){
+ // Hold the current envelope before retargeting; discard obsolete automation.
+ if(param.cancelAndHoldAtTime)param.cancelAndHoldAtTime(time);
+ else {const current=param.value;param.cancelScheduledValues(time);param.setValueAtTime(current,time);}
+ param.setTargetAtTime(value,time,Math.max(.005,seconds/3));
 }
 export function createAudio(storage){
- let context,mix,muted=false,paused=true,underwater=false,epoch=0,shutdownTimer=null,serial=0,highWater=0;
- let listener={x:0,y:0,z:0,yaw:0,shoreDistance:Infinity,surface:'grass',region:'legacy'};
- const active=new Set(),continuous=new Map(),buffers=new Map(),last=new Map(),diagnosticLast=new Map(),events=[],diagnostics=[];
+ let context,master,compressor,manifest,manifestJob,muted=false,paused=true,epoch=0,quietTimer;
+ let decodedBytes=0,loading=0,highWater=0,loadHighWater=0,manifestAttempts=0;
+ let listener={x:0,y:0,z:0,yaw:0,waterDistance:32,submersion:0};
+ const buffers=new Map(),states=new Map(),attempts=new Map(),active=new Set(),loops=new Map(),last=new Map(),variants=new Map(),events=[],diagnostics=[];
  const counts={admitted:0,dropped:0,stopped:0};
  try{storage??=globalThis.localStorage;muted=storage?.getItem('kauris-muted')==='1';}catch{}
- const now=()=>context?.currentTime??0;
- function boundedSet(map,key,value,max=128){map.delete(key);map.set(key,value);if(map.size>max)map.delete(map.keys().next().value);}
- function record(action,request,options={},reason){
-  const entry={sequence:++serial,action,request,kind:profileKey(request,options.material,options.surface),sourceId:options.sourceId??null,category:PROFILES[request]?.category??(Object.hasOwn(PROFILES,request)?'foreground':null),material:options.material??null,time:now(),x:options.x??null,y:options.y??null,z:options.z??null};
-  if(reason)entry.reason=reason;
-  if(action==='admit'){Object.assign(entry,{gain:options.gain,pan:options.pan});events.push(entry);if(events.length>256)events.shift();counts.admitted++;}
-  else {counts[action==='drop'?'dropped':'stopped']++;const key=`${action}:${request}:${reason}`;if(now()-(diagnosticLast.get(key)??-Infinity)<1)return;boundedSet(diagnosticLast,key,now());diagnostics.push(entry);if(diagnostics.length>128)diagnostics.shift();}
+ const time=()=>context?.currentTime??0;
+ function note(reason,kind){counts.dropped++;if(diagnostics.at(-1)?.reason===reason&&diagnostics.at(-1)?.kind===kind)return;diagnostics.push({reason,kind,time:time()});if(diagnostics.length>64)diagnostics.shift();}
+ function bounded(map,key,value){map.delete(key);map.set(key,value);if(map.size>128)map.delete(map.keys().next().value);}
+ function finish(v){
+  if(!active.delete(v))return;clearTimeout(v.timer);if(loops.get(v.id)===v)loops.delete(v.id);
+  try{v.source.stop();}catch{}for(const n of [v.source,v.gain,v.pan,v.filter])try{n?.disconnect();}catch{}counts.stopped++;
  }
- function finish(v,reason='ended'){
-  if(!active.delete(v))return;
-  if(v.timer)clearTimeout(v.timer);if(continuous.get(v.id)===v)continuous.delete(v.id);
-  try{v.source.stop();}catch{}v.dispose();record('stop',v.request,{...v.options,sourceId:v.id},reason);
+ function reap(){for(const v of active)if(v.releaseAt!==undefined&&time()>=v.releaseAt||!v.loop&&time()>=v.endsAt)finish(v);}
+ function release(v,seconds=.25){
+  if(v.releaseAt!==undefined)return;
+  target(v.gain.gain,0,time(),seconds);v.releaseAt=time()+seconds;v.targetGain=0;
+  v.timer=setTimeout(()=>finish(v),seconds*1000+5);
  }
- function reap(){for(const v of active)if(v.releaseAt!==undefined&&now()>=v.releaseAt||!v.loop&&now()>=v.endsAt)finish(v);}
- function stopAll(reason){for(const v of [...active])finish(v,reason);continuous.clear();}
  function quiet(){
-  const token=++epoch;if(shutdownTimer)clearTimeout(shutdownTimer);shutdownTimer=null;
-  if(!context||!mix)return;
-  try{ramp(mix.output.gain,0,now(),.025);}catch{stopAll('transition-failure');}
-  shutdownTimer=setTimeout(()=>{shutdownTimer=null;if(token!==epoch)return;stopAll('transition');try{Promise.resolve(context.suspend()).catch(()=>{});}catch{}},30);
+  const token=++epoch;clearTimeout(quietTimer);if(!context)return;
+  try{target(master.gain,0,time(),.03);}catch{}
+  quietTimer=setTimeout(()=>{if(token!==epoch)return;for(const v of [...active])finish(v);last.clear();try{Promise.resolve(context.suspend()).catch(()=>{});}catch{}},40);
+ }
+ async function bytes(url,cap){
+  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),10000);
+  try{
+   const response=await fetch(url,{signal:controller.signal});if(!response.ok)throw Error('http');
+   if(Number(response.headers.get('content-length'))>cap)throw Error('size');
+   const reader=response.body?.getReader();
+   if(!reader)throw Error('stream');
+   const chunks=[];let length=0;
+   while(true){const {done,value}=await reader.read();if(done)break;length+=value.byteLength;if(length>cap){await reader.cancel();throw Error('size');}chunks.push(value);}
+   const out=new Uint8Array(length);let offset=0;for(const chunk of chunks){out.set(chunk,offset);offset+=chunk.length;}return out.buffer;
+  }finally{clearTimeout(timer);}
+ }
+ function validate(data){
+  if(data?.version!==1||!data.assets||!data.banks)throw Error('manifest');
+  const rows=Object.entries(data.assets);if(!rows.length||rows.length>64)throw Error('manifest');let size=0,decoded=0;
+  for(const [id,a] of rows){
+   if(!/^[a-z0-9-]+$/.test(id)||!a||!/^[a-z0-9-]+\.ogg$/.test(a.file)||!Number.isInteger(a.bytes)||a.bytes<1||a.bytes>512*1024||!Number.isFinite(a.duration)||a.duration<=0||a.duration>30||![1,2].includes(a.channels))throw Error('manifest');
+   size+=a.bytes;decoded+=Math.ceil((a.duration+.05)*context.sampleRate)*a.channels*4;
+  }
+  if(size>MAX_BYTES||decoded>MAX_DECODED)throw Error('budget');
+  for(const key of ['step-soft','step-hard','step-wood','dig','fill','chop','build','swim','water','shore','bell'])if(!Array.isArray(data.banks[key])||!data.banks[key].length||data.banks[key].some(id=>!Object.hasOwn(data.assets,id)))throw Error('bank');
+  return data;
+ }
+ function pump(){
+  if(!manifest||paused||muted)return;
+  const priority=[...manifest.banks['step-soft'],...manifest.banks.water,...manifest.banks['step-hard'],...manifest.banks['step-wood'],...Object.keys(manifest.assets)];
+  for(const id of new Set(priority)){
+   if(loading>=2)break;if(states.has(id))continue;
+   states.set(id,'loading');attempts.set(id,(attempts.get(id)??0)+1);loading++;loadHighWater=Math.max(loadHighWater,loading);
+   const a=manifest.assets[id];
+   (async()=>{
+    try{
+     const raw=await bytes(ROOT+a.file,a.bytes);if(raw.byteLength!==a.bytes)throw Error('size');
+     const buffer=await context.decodeAudioData(raw),size=buffer.length*buffer.numberOfChannels*4;
+     if(buffer.duration>a.duration+.05||buffer.numberOfChannels!==a.channels||decodedBytes+size>MAX_DECODED)throw Error('decode-budget');
+     buffers.set(id,buffer);decodedBytes+=size;states.set(id,'ready');
+    }catch{states.set(id,'failed');note('load-failed',id);}
+    finally{loading--;pump();}
+   })();
+  }
+ }
+ function load(){
+  if(manifest){pump();return;}
+  if(manifestJob||manifestAttempts>=2)return;
+  manifestAttempts++;
+  manifestJob=(async()=>{try{manifest=validate(JSON.parse(new TextDecoder().decode(await bytes(ROOT+'manifest.json',128*1024))));}catch{note('manifest-failed','assets');}finally{manifestJob=null;pump();}})();
  }
  function start(){
-  paused=false;if(muted)return;
+  const resuming=paused;paused=false;if(muted)return;
   const token=++epoch;
-  if(shutdownTimer){clearTimeout(shutdownTimer);shutdownTimer=null;stopAll('restart');}
+  if(quietTimer){clearTimeout(quietTimer);quietTimer=null;for(const v of [...active])finish(v);last.clear();}
   try{
-   if(!context){context=new (globalThis.AudioContext||globalThis.webkitAudioContext)();try{mix=createMix(context);}catch(error){try{Promise.resolve(context.close()).catch(()=>{});}catch{}context=null;throw error;}}
-   Promise.resolve(context.resume()).then(()=>{if(token!==epoch)return;if(paused||muted){quiet();return;}try{ramp(mix.output.gain,1,now(),.02);}catch{quiet();}}).catch(()=>{});
-  }catch{}
+   if(!context){
+    context=new (globalThis.AudioContext||globalThis.webkitAudioContext)({sampleRate:48000});master=context.createGain();master.gain.value=0;
+    compressor=context.createDynamicsCompressor();compressor.threshold.value=-12;compressor.knee.value=10;compressor.ratio.value=5;compressor.attack.value=.005;compressor.release.value=.15;
+    master.connect(compressor).connect(context.destination);
+   }
+   Promise.resolve(context.resume()).then(()=>{if(token===epoch&&!paused&&!muted)target(master.gain,.8,time(),.03);}).catch(()=>{});
+   if(resuming)for(const [id,state] of states)if(state==='failed'&&attempts.get(id)<2)states.delete(id);
+   load();
+  }catch{note('unavailable','context');}
  }
- function ready(){reap();return !paused&&!muted&&context?.state==='running'&&!!mix;}
- function getBuffer(key){
-  let buffer=buffers.get(key);if(buffer){buffers.delete(key);buffers.set(key,buffer);return buffer;}
-  buffer=soundBuffer(context,key);buffers.set(key,buffer);if(buffers.size>48){const stale=[...buffers.keys()].find(k=>!PROFILES[k.split(':')[0]].loop);buffers.delete(stale);}return buffer;
+ const ready=()=>!paused&&!muted&&context?.state==='running'&&!!manifest;
+ function select(bank){
+  const list=manifest?.banks[bank]?.filter(id=>buffers.has(id))??[];if(!list.length)return null;
+  const prior=variants.get(bank);if(bank.startsWith('step-')&&list.length===1&&list[0]===prior)return null;
+  const choices=list.filter(id=>id!==prior),id=(choices.length?choices:list)[Math.floor(Math.random()*(choices.length||list.length))];
+  return id;
  }
- function spatial(request,options,level){
-  const profile=PROFILES[request];let gain=clamp(finite(level,1),0,1)*profile.gain,pan=0,distance=0;
+ function position(options,level){
+  let gain=clamp(finite(level,1)),pan=0;
   if(Number.isFinite(options.x)&&Number.isFinite(options.z)){
-   const dx=options.x-listener.x,dz=options.z-listener.z,dy=finite(options.y,listener.y)-listener.y;distance=Math.hypot(dx,dy,dz);
-   const range=profile.range??24;if(distance>=range)return {gain:0,pan:0,distance};
-   const fade=clamp((range-distance)/6,0,1);gain*=fade/(1+(distance/(request==='whale'?22:8))**2);
-   pan=clamp((dx*Math.cos(listener.yaw)-dz*Math.sin(listener.yaw))/Math.max(1,distance),-1,1);
+   const dx=options.x-listener.x,dz=options.z-listener.z,dy=finite(options.y,listener.y)-listener.y,d=Math.hypot(dx,dy,dz);
+   gain*=clamp((24-d)/6)/(1+(d/8)**2);pan=clamp((dx*Math.cos(listener.yaw)-dz*Math.sin(listener.yaw))/Math.max(1,d),-1,1);
   }
-  return {gain,pan,distance};
+  return {gain,pan};
  }
- function admit(category,priority,distance){
-  reap();const candidates=[...active].filter(v=>v.category===category);
-  if(candidates.length<LIMITS[category]&&active.size<12)return true;
-  const pool=candidates.length>=LIMITS[category]?candidates:[...active];
-  pool.sort((a,b)=>a.priority-b.priority||b.distance-a.distance||a.started-b.started);
-  const victim=pool[0];
-  if(victim&&(victim.releaseAt!==undefined||victim.priority<priority||victim.priority===priority&&(category==='foreground'||distance+.5<victim.distance))){finish(victim,'priority');return true;}
-  return false;
- }
- function launch(request,options,loop,id,level){
-  const p=PROFILES[request],category=p.category??'foreground',position=spatial(request,options,level);
-  if(position.gain<.0001){record('drop',request,options,'distance');return null;}
-  if(!admit(category,p.priority,position.distance)){record('drop',request,options,'polyphony');return null;}
+ function launch(kind,bank,id,options,level,loop=false){
+  reap();const asset=select(bank);if(!asset){note('not-loaded',kind);return null;}
+  const pos=position(options,level);if(pos.gain<.0001)return null;
+  // Six actions and four held sources leave room for the environmental layer and tails.
+  const category=loop?(kind==='shore'?'environment':'continuous'):'foreground';
+  const same=[...active].filter(v=>v.category===category),cap=category==='foreground'?6:category==='continuous'?4:1;
+  if(same.length>=cap){if(category==='foreground')release(same[0],.025);else return null;}
+  if(active.size>=MAX_VOICES){note('voice-cap',kind);return null;}
+  let source,gain,pan,filter;
   try{
-   const key=profileKey(request,options.material,options.surface),buffer=getBuffer(key);
-   const v=scheduleSound(context,mix,key,{...position,volume:position.gain,loop,buffer,attack:loop?.035:.004});
-   Object.assign(v,{id,request,options:{...options},loop,category,priority:p.priority,distance:position.distance,level,started:now(),endsAt:now()+buffer.duration,targetGain:position.gain,targetPan:position.pan});
-   active.add(v);if(loop)continuous.set(id,v);v.source.onended=()=>finish(v);highWater=Math.max(highWater,active.size);
-   record('admit',request,{...options,sourceId:id,...position});return v;
-  }catch{record('drop',request,options,'audio-failure');return null;}
+   source=context.createBufferSource();gain=context.createGain();pan=context.createStereoPanner();source.buffer=buffers.get(asset);source.loop=loop;
+   source.connect(gain).connect(pan);if(kind==='shore'){filter=context.createBiquadFilter();filter.type='lowpass';filter.frequency.value=12000;pan.connect(filter).connect(master);}else pan.connect(master);
+   gain.gain.value=0;pan.pan.value=pos.pan;target(gain.gain,pos.gain,time(),kind==='shore'?2:loop?.15:.012);source.start();
+   const v={id,kind,asset,source,gain,pan,filter,loop,category,options:{...options},level,targetGain:pos.gain,targetPan:pos.pan,endsAt:time()+source.buffer.duration};
+   active.add(v);if(loop)loops.set(id,v);source.onended=()=>finish(v);highWater=Math.max(highWater,active.size);variants.set(bank,asset);
+   counts.admitted++;events.push({kind,asset,sourceId:id,time:time(),gain:pos.gain,pan:pos.pan});if(events.length>128)events.shift();return v;
+  }catch{try{source?.stop();}catch{}for(const node of [source,gain,pan,filter])try{node?.disconnect();}catch{}note('source-failed',kind);return null;}
  }
- function play(request,options={}){
-  const p=Object.hasOwn(PROFILES,request)?PROFILES[request]:null;
-  if(!p||p.loop){record('drop',request,options,'unknown-or-continuous');return false;}
-  if(!ready())return false;
-  const time=now(),id=String(options.sourceId??`player:${request}`),key=`${request}:${id}`;
-  if(time-(last.get(key)??-Infinity)<p.rate||p.notification&&time-(last.get('notification')??-Infinity)<10||p.critter&&time-(last.get('critter-global')??-Infinity)<3||request==='bell'&&time-(last.get('bell-global')??-Infinity)<.6){record('drop',request,options,'rate');return false;}
-  if(!launch(request,options,false,id,options.volume??1))return false;
-  boundedSet(last,key,time);if(p.notification)boundedSet(last,'notification',time);if(request==='bell')boundedSet(last,'bell-global',time);if(p.critter)boundedSet(last,'critter-global',time);return true;
+ function update(v,options,level,seconds=.12){
+  if(v.releaseAt!==undefined){clearTimeout(v.timer);delete v.releaseAt;v.targetGain=-1;}
+  v.options={...options};v.level=level;const p=position(options,level);
+  if(Math.abs(p.gain-v.targetGain)>.0001){target(v.gain.gain,p.gain,time(),seconds);v.targetGain=p.gain;}
+  if(Math.abs(p.pan-v.targetPan)>.001){target(v.pan.pan,p.pan,time(),.06);v.targetPan=p.pan;}
  }
- function release(v,seconds=.1){
-  if(v.releaseAt!==undefined)return;
-  try{ramp(v.gain.gain,0,now(),seconds);v.releaseAt=now()+seconds;v.timer=setTimeout(()=>{v.timer=null;if(v.releaseAt!==undefined)finish(v,'release');},seconds*1000+10);}
-  catch{finish(v,'audio-failure');}
- }
- function updateVoice(v,options,level){
-  const pos=spatial(v.request,options,level);v.options={...options};v.level=level;v.distance=pos.distance;
-  if(pos.gain<.0001){release(v);return;}
-  try{
-   if(v.releaseAt!==undefined){if(v.timer)clearTimeout(v.timer);v.timer=null;delete v.releaseAt;v.targetGain=-1;}
-   if(Math.abs(v.targetGain-pos.gain)>.0001){ramp(v.gain.gain,pos.gain,now(),.06);v.targetGain=pos.gain;}
-   if(Math.abs(v.targetPan-pos.pan)>.001){ramp(v.panner.pan,pos.pan,now(),.04);v.targetPan=pos.pan;}
-  }catch{finish(v,'audio-failure');}
+ function play(kind,options={}){
+  const p=Object.hasOwn(ACTIONS,kind)?ACTIONS[kind]:null;if(!p||!ready())return false;reap();
+  const key=`${kind}:${String(options.sourceId??'player').slice(0,100)}`;
+  // The global gait/stroke limits also prevent multiple callers from defeating cadence.
+  const rateKey=kind==='step'||kind==='swim'?kind:key;
+  if(time()-(last.get(rateKey)??-Infinity)<p.rate)return false;
+  const bank=kind==='step'?(options.material==='wood'||options.surface==='wood'?'step-wood':['copper','iron','diamond'].includes(options.material)||['rock','stone'].includes(options.surface)?'step-hard':'step-soft'):(p.bank??kind);
+  const v=launch(kind,bank,options.sourceId??`player:${kind}`,options,p.gain*clamp(finite(options.volume,1)));
+  if(v)bounded(last,rateKey,time());return !!v;
  }
  function setContinuous(id,kind,options={}){
-  if(typeof id!=='string'||!id||!['water','wheel','liftMove'].includes(kind)){record('drop',kind,options,'unknown-continuous');return false;}
-  reap();const v=continuous.get(id);
+  if(typeof id!=='string'||id.length>128||!id||kind!=='water')return false;reap();const v=loops.get(id);
   if(!options.active){if(v)release(v);return false;}
   if(!ready())return false;
-  if(v&&v.request===kind){updateVoice(v,options,options.gain??1);return true;}
-  if(v)finish(v,'kind-changed');return !!launch(kind,{...options,sourceId:id},true,id,options.gain??1);
+  const level=.7*clamp(finite(options.gain,1));if(v){update(v,options,level);return true;}
+  return !!launch(kind,'water',id,options,level,true);
  }
  function environment(next={}){
   for(const key of ['x','y','z','yaw'])listener[key]=finite(next[key],listener[key]);
-  listener.shoreDistance=Number.isFinite(next.shoreDistance)?Math.abs(next.shoreDistance):Infinity;listener.region=next.region??listener.region;listener.surface=next.surface??listener.surface;underwater=!!next.underwater;
-  if(!ready())return;
-  for(const v of [...continuous.values()])if(!v.id.startsWith('ambient:')&&v.releaseAt===undefined)updateVoice(v,v.options,v.level);
-  const sea=clamp(1-listener.shoreDistance/24,0,1);
-  for(const [kind,level] of [['shore',underwater?0:sea*.65],['underwater',underwater?.65:0]]){
-   const id=`ambient:${kind}`,v=continuous.get(id);
-   if(level===0){if(v)release(v,.1);continue;}
-   if(v)updateVoice(v,{},level);else launch(kind,{},true,id,level);
-  }
+  listener.waterDistance=clamp(finite(next.waterDistance,32),0,32);listener.submersion=clamp(finite(next.submersion));
+  if(!ready())return;reap();
+  for(const v of loops.values())if(v.kind==='water'&&v.releaseAt===undefined)update(v,v.options,v.level);
+  const near=clamp(1-listener.waterDistance/24),level=.6*near*near*(1-.6*listener.submersion),v=loops.get('ambient:shore');
+  if(level<.0001){if(v)release(v,2);return;}
+  // Keep phase through every shore/submersion crossing; a single recording avoids comb filtering.
+  const voice=v??(level>.002?launch('shore','shore','ambient:shore',{},level,true):null);
+  if(voice){update(voice,{},level,2);const hz=12000*(650/12000)**listener.submersion;if(Math.abs((voice.hz??12000)-hz)>1){target(voice.filter.frequency,hz,time(),1.5);voice.hz=hz;}}
  }
  function pause(){paused=true;quiet();}
- return {start,play,setContinuous,pause,environment,get muted(){return muted;},toggle(){muted=!muted;try{storage?.setItem('kauris-muted',muted?'1':'0');}catch{}if(muted)quiet();else if(!paused)start();return muted;},
-  snapshot(){reap();return {muted,paused,state:context?.state??'not-started',voices:active.size,voiceLimit:12,highWater,underwater,counts:{...counts},categories:Object.fromEntries(Object.keys(LIMITS).map(k=>[k,[...active].filter(v=>v.category===k).length])),continuous:[...continuous.values()].map(v=>({id:v.id,kind:v.request,releasing:v.releaseAt!==undefined,gain:v.targetGain})),bufferBytes:[...buffers.values()].reduce((s,b)=>s+b.length*4,0),events:[...events],diagnostics:[...diagnostics]};}
+ return {start,pause,play,setContinuous,environment,get muted(){return muted;},toggle(){muted=!muted;try{storage?.setItem('kauris-muted',muted?'1':'0');}catch{}if(muted)quiet();else if(!paused)start();return muted;},
+  snapshot(){reap();return {muted,paused,state:context?.state??'not-started',voices:active.size,voiceLimit:MAX_VOICES,highWater,decodedBytes,bufferBytes:decodedBytes,loading,loadHighWater,ready:buffers.size,failed:[...states.values()].filter(s=>s==='failed').length,manifest:!!manifest,submersion:listener.submersion,counts:{...counts},continuous:[...loops.values()].map(v=>({id:v.id,kind:v.kind,asset:v.asset,releasing:v.releaseAt!==undefined,gain:v.targetGain})),events:[...events],diagnostics:[...diagnostics]};}
  };
-}
-export async function renderAudioSampler(OfflineContext){
- const span=AUDIO_SAMPLES.reduce((s,k)=>s+(PROFILES[k].loop?2:PROFILES[k].duration)+.35,0)+1;
- const context=new OfflineContext(2,Math.ceil(span*48000),48000),mix=createMix(context),events=[];let at=.15;
- for(const kind of AUDIO_SAMPLES){const p=PROFILES[kind],duration=p.loop?2:p.duration;const v=scheduleSound(context,mix,profileKey(kind),{at,volume:p.gain,loop:!!p.loop});if(p.loop){v.gain.gain.setValueAtTime(p.gain,at+duration-.1);v.gain.gain.linearRampToValueAtTime(0,at+duration);v.source.stop(at+duration);}events.push({kind,at,duration});at+=duration+.35;}
- return {buffer:await context.startRendering(),events};
 }

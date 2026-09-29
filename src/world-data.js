@@ -1,3 +1,4 @@
+import {chunkAt,sampleCell} from './surface-grid.js';
 import {describeChunk,resourceById} from './world-layout.js';
 // Stable identities are save data. Never renumber resources when adding scenery.
 export const PLACES = [
@@ -12,7 +13,7 @@ const pockets = {
  windmill:[[-12,-11,'birch'],[-11,-7,'oak'],[-7,-12,'pine'],[-12,-4,'willow'],[-7,-8,'flowers'],[-9,-7,'flowers'],[-11,-12,'flowers']],
  shore:[[-5,12,'willow'],[5,12,'oak'],[9,11,'birch'],[12,8,'pine'],[11,3,'oak'],[8,5,'flowers'],[2,-12,'pine'],[5,-12,'birch']],
 };
-export const WILD_RESOURCES=Object.entries(pockets).flatMap(([place,entries])=>entries.map(([gx,gz,kind],i)=>({id:`${place}-${i+1}`,gx,gz,kind,scale:kind==='flowers'?.95:.88+(i%3)*.08,yaw:i*1.7,place})));
+export const WILD_RESOURCES=Object.entries(pockets).flatMap(([place,entries])=>entries.map(([gx,gz,kind],i)=>({id:`${place}-${i+1}`,gx,gz,kind,scale:kind==='flowers'?.95:.88+(i%3)*.08,yaw:i*1.7,place,baseY:sampleCell(gx,gz).height})));
 export const wildFootprint=r=>({minX:r.gx*2-.65,maxX:r.gx*2+.65,minZ:r.gz*2-.65,maxZ:r.gz*2+.65});
 export const overlaps=(a,b)=>a.minX<=b.maxX&&a.maxX>=b.minX&&a.minZ<=b.maxZ&&a.maxZ>=b.minZ;
 export const cellFootprint=(gx,gz,margin=0)=>({minX:gx*2-1-margin,maxX:gx*2+1+margin,minZ:gz*2-1-margin,maxZ:gz*2+1+margin});
@@ -26,7 +27,7 @@ export function worldChunk(cx,cz){
  return value;
 }
 export function nearbyChunks(x,z,radius=2){
- const result=[];for(let cx=Math.floor((x-radius)/32);cx<=Math.floor((x+radius)/32);cx++)for(let cz=Math.floor((z-radius)/32);cz<=Math.floor((z+radius)/32);cz++)result.push(worldChunk(cx,cz));return result;
+ const result=[];for(let cx=chunkAt(x-radius,z).cx;cx<=chunkAt(x+radius,z).cx;cx++)for(let cz=chunkAt(x,z-radius).cz;cz<=chunkAt(x,z+radius).cz;cz++)result.push(worldChunk(cx,cz));return result;
 }
 export const resourceRecord=id=>WILD_RESOURCES.find(r=>r.id===id)??resourceById(id);
 export const descriptorCount=()=>descriptors.size;
