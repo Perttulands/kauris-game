@@ -104,3 +104,13 @@ test('actual bird calls have independent critter global/source caps and finite r
   c.currentTime=10.1;assert.ok(a.play('bird',{sourceId:'bird:one',x:2,z:0}));
  });
 });
+
+test('Play creates no sound buffers; first-use water is cached without source restart',async()=>{
+ await fixture((a,c)=>{
+  assert.equal(a.snapshot().bufferBytes,0);assert.equal(c.sources.length,0);
+  a.setContinuous('player:water','water',{active:true});const first=c.sources[0],bytes=a.snapshot().bufferBytes;
+  assert.equal(bytes,48000*PROFILES.water.duration*4);
+  for(let i=0;i<10;i++){c.currentTime+=.1;a.setContinuous('player:water','water',{active:true});}
+  assert.equal(c.sources.length,1);assert.equal(c.sources[0],first);assert.equal(a.snapshot().bufferBytes,bytes);
+ });
+});

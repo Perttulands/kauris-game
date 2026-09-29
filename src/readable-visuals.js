@@ -38,12 +38,12 @@ export function createReadableWorld(){
  const targetRoot=new THREE.Group();group.add(targetRoot);
  const dry=mesh(groundLines([[-.7,-.45,-.23,-.2],[-.23,-.2,-.4,.21],[-.4,.21,-.18,.64],[-.4,.21,-.73,.4],[.3,-.68,.48,-.23],[.48,-.23,.26,.23],[.26,.23,.59,.55],[.48,-.23,.77,-.15]]),crack,targetRoot);
  const wet=mesh(ownGeometry(new THREE.RingGeometry(.42,.48,18).rotateX(-Math.PI/2)),damp,targetRoot);wet.position.y=.041;wet.scale.set(1.35,1,.85);
- // A small bound sheaf sits against the stem/root, never above the crown.
- const harvest=mesh(batch([
-  [-.08,.22,0,.045,.38,.05,-.25,'#d4b371'],[0,.26,0,.045,.45,.05,0,'#ead19a'],[.08,.22,0,.045,.38,.05,.25,'#d4b371'],
-  [-.13,.35,0,.095,.17,.035,-.55,'#eddaaa'],[.13,.35,0,.095,.17,.035,.55,'#eddaaa'],[0,.44,0,.09,.15,.04,0,'#eddaaa'],
-  [0,.15,.025,.25,.065,.065,0,'#75948a']
- ]),paint,targetRoot);harvest.position.set(.43,.035,.42);
+ // Ripe plots receive four short marks on their soil, not a loose collectible.
+ // The same ground attachment works for a tree trunk or a spread of flower stems.
+ const harvest=mesh(groundLines([
+  [-.86,-.58,-.86,-.86],[-.86,-.86,-.58,-.86],[.58,-.86,.86,-.86],[.86,-.86,.86,-.58],
+  [.86,.58,.86,.86],[.86,.86,.58,.86],[-.58,.86,-.86,.86],[-.86,.86,-.86,.58]
+ ],.055,.046),standard('#e4c786'),targetRoot);harvest.name='ripe-soil-marks';
  const placementRoot=new THREE.Group();group.add(placementRoot);
  const square=groundLines([[-.99,-.99,.99,-.99],[.99,-.99,.99,.99],[.99,.99,-.99,.99],[-.99,.99,-.99,-.99]],.04,.04);
  const edge=groundLines([[-.98,-1,.98,-1],[-.98,-1,-.98,-.7],[.98,-1,.98,-.7]],.05,.045);
@@ -80,7 +80,7 @@ export function createReadableWorld(){
   targetRoot.visible=!!target;placementRoot.visible=!!placement;houseRoot.visible=!!houseNeed;beacon.visible=!!home;
   support.visible=!!placement?.supportSegments?.length;bounds.visible=!!placement?.invalidBounds&&!placement.ok;
   if(!active)return;
-  if(target){place(targetRoot,target);dry.visible=target.kind==='dry';wet.visible=target.kind==='wet';harvest.visible=target.kind==='harvest';harvest.scale.setScalar(['flowers','starflower'].includes(target.plantKind)?.72:1);}
+  if(target){place(targetRoot,target);dry.visible=target.kind==='dry';wet.visible=target.kind==='wet';harvest.visible=target.kind==='harvest';}
   if(placement){
    place(placementRoot,placement);contact.geometry=['wall','window','door'].includes(placement.kind)?edge:square;contact.material=placement.ok?valid:invalid;cross.visible=!placement.ok;
    const segments=placement.supportSegments??[];support.count=Math.min(4,segments.length);

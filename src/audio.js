@@ -61,7 +61,7 @@ export function createAudio(storage){
   const token=++epoch;
   if(shutdownTimer){clearTimeout(shutdownTimer);shutdownTimer=null;stopAll('restart');}
   try{
-   if(!context){context=new (globalThis.AudioContext||globalThis.webkitAudioContext)();try{mix=createMix(context);for(const request of AUDIO_SAMPLES)getBuffer(profileKey(request));for(const surface of ['grass','sand','rock','seabed'])getBuffer(profileKey('step',null,surface));}catch(error){try{Promise.resolve(context.close()).catch(()=>{});}catch{}context=null;throw error;}}
+   if(!context){context=new (globalThis.AudioContext||globalThis.webkitAudioContext)();try{mix=createMix(context);}catch(error){try{Promise.resolve(context.close()).catch(()=>{});}catch{}context=null;throw error;}}
    Promise.resolve(context.resume()).then(()=>{if(token!==epoch)return;if(paused||muted){quiet();return;}try{ramp(mix.output.gain,1,now(),.02);}catch{quiet();}}).catch(()=>{});
   }catch{}
  }

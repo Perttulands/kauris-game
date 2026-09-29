@@ -582,9 +582,18 @@ sync();chooseTool(0);if(loadWarning){$('welcomeSave').textContent=t(loadWarning)
 await yieldBoot();worldRuntime.update(pos.x,pos.z);refreshInteractive();applyQuality();
 const timing=[],worldTiming=[];let frames=0,livingTime=0,stepDistance=0;
 await yieldBoot();
-camera.position.set(pos.x,feet+1.7,pos.z);camera.rotation.set(pitch,yaw,0,'YXZ');
+camera.position.set(pos.x,feet+1.7,pos.z);camera.rotation.set(pitch,yaw,0,'YXZ');camera.updateMatrixWorld();
+for(const g of wildMeshes.values())animateTree(g,{growth:1,time:elapsed});
+poseMarine(0);updateViewVisibility();updateWaterView(camera.position.y<TERRAIN.waterY);
+waterSurface.position.x=pos.x;waterSurface.position.z=pos.z;if(toolMesh)toolMesh.visible=true;
+scene.updateMatrixWorld(true);
 const compileStart=performance.now();try{await renderer.compileAsync(scene,camera);}catch{}
 boot?.marks.push({name:'compileAsync-wall-time',start:compileStart,duration:performance.now()-compileStart}); // Driver support differs; errors still surface on actual render.
+// Compile alone does not submit geometry and first-use driver work. Prepare one
+// actual initial still while the loading screen owns input; never run an idle loop.
+await yieldBoot();measureBoot('initial-still-render',()=>renderer.render(scene,camera));
+if(toolMesh)toolMesh.visible=false;
+await new Promise(resolve=>requestAnimationFrame(()=>setTimeout(resolve,0)));
 runtimeReady=true;boot?.done();if(pendingStart)requestLock();
 function frame(now){
  frameHandle=0;if(!locked||document.hidden){previous=null;quality.reset();return;}frameHandle=requestAnimationFrame(frame);const realDt=previous===null?0:(now-previous)/1000,dt=frameDelta(now,previous,true);previous=now;if(now>qualityWarmUntil&&quality.sample(realDt*1000,now,true))applyQuality();
@@ -592,7 +601,6 @@ function frame(now){
  // without rendering or posing the hidden world; the first explicit Play resumes it.
  if(!started&&!$('overlay').hidden&&$('overlay').dataset.mode==='landing')return;
  const worldStart=performance.now();worldRuntime.update(pos.x,pos.z);const nearbyKey=`${Math.floor(pos.x/8)},${Math.floor(pos.z/8)}`;if(nearbyKey!==wildCell){wildCell=nearbyKey;syncWild();}if(worldVersion!==worldRuntime.version){worldVersion=worldRuntime.version;refreshInteractive();}worldTiming.push(performance.now()-worldStart);if(worldTiming.length>180)worldTiming.shift();
- if(cover)for(const mesh of cover.children){if(!mesh.geometry.boundingBox)mesh.geometry.computeBoundingBox();mesh.visible=nearCoverBounds(mesh.geometry.boundingBox,pos.x,pos.z);}
  elapsed+=dt;if(realDt<1){timing.push(realDt*1000);if(timing.length>180)timing.shift();}
  if(locked){
   if(fallbackLook){if(keys.has('ArrowLeft'))yaw+=dt*1.4*(display.comfort?.65:1);if(keys.has('ArrowRight'))yaw-=dt*1.4*(display.comfort?.65:1);if(keys.has('ArrowUp'))pitch+=dt*1.1*(display.comfort?.65:1);if(keys.has('ArrowDown'))pitch-=dt*1.1*(display.comfort?.65:1);pitch=Math.max(-1.45,Math.min(1.45,pitch));}
@@ -609,23 +617,13 @@ function frame(now){
   if(cover)animateMeadowCover(cover,{time:livingTime});
 
  }
- // Keep remote bugs/rigs out of draw and shadow passes without resetting visits,
- // poses or paid records. Large whales and houses retain their own presentation.
- for(const g of plantMeshes.values())showPresentation(g,nearPresentation(g,resourceView.x,resourceView.z,48));
- for(const a of garden.readingObjects())showPresentation(a.model,nearPresentation(a.model,pos.x,pos.z,Math.max(16,actorViewDistance(a.kind)*quality.tier.decor)));
- for(const {actor,model} of marine)showPresentation(model,nearPresentation(model,pos.x,pos.z,Math.max(16,actorViewDistance(actor.kind)*quality.tier.decor)));
- for(const a of outerLife.readingObjects())showPresentation(a.model,nearPresentation(a.model,pos.x,pos.z,Math.max(16,actorViewDistance(a.kind)*quality.tier.decor)));
- for(const g of garden.discoveries.values())showPresentation(g,nearPresentation(g,pos.x,pos.z,64));
- for(const g of residents.models.values())showPresentation(g,nearPresentation(g,pos.x,pos.z,48));
- ocean.visible=nearCoverBounds(oceanBounds,pos.x,pos.z,48);if(reefCover)reefCover.visible=nearCoverBounds(reefCover.userData.viewBounds,pos.x,pos.z,48);
- // Spend the shadow map on the nearby world, including ocean houses, not the whole distant orchard.
- const shadowX=Math.round(pos.x/2)*2,shadowZ=Math.round(pos.z/2)*2,shadowY=terrainHeight(pos.x,pos.z);sun.target.position.set(shadowX,shadowY,shadowZ);sun.position.set(shadowX-24,shadowY+38,shadowZ+16);
+ updateViewVisibility();
  camera.position.set(pos.x,feet+1.7,pos.z);camera.rotation.set(pitch,yaw,0,'YXZ');camera.updateMatrixWorld();pick();updateReading(now);updateToyButton();
  // Watching a resident or paid home must not suggest cultivating its occupied floor.
  // This is presentation only: building/removal feedback and the action ray stay intact.
  const watchingMarine=locked&&!menuReading&&tool<5&&!target?.propId&&!target?.wildId&&!target?.plot&&(currentReading?.id?.startsWith('marine:')||currentReading?.id?.startsWith('resident:')||target?.buildId);
  $('hud').classList.toggle('watchingMarine',!!watchingMarine);if(watchingMarine)tileOutline.visible=false;
- const regionSample=sampleWorld(pos.x,pos.z),underwater=camera.position.y<TERRAIN.waterY;waterSurface.position.x=pos.x;waterSurface.position.z=pos.z;if(locked)audio.environment({x:pos.x,y:camera.position.y,z:pos.z,yaw,underwater,region:regionSample.region,surface:regionSample.surface==='rock'?'stone':regionSample.surface,shoreDistance:Math.abs(regionSample.shoreDistance)});$('hud').classList.toggle('inOcean',regionSample.height<TERRAIN.waterY);scene.background=underwater?seaBackground:dayBackground;scene.fog.color.set(underwater?'#5c9fa7':'#b7d7d7');scene.fog.near=underwater?8:38;scene.fog.far=underwater?48:118;waterSurface.material.opacity=underwater?.18:.48;
+ const regionSample=sampleWorld(pos.x,pos.z),underwater=camera.position.y<TERRAIN.waterY;waterSurface.position.x=pos.x;waterSurface.position.z=pos.z;if(locked)audio.environment({x:pos.x,y:camera.position.y,z:pos.z,yaw,underwater,region:regionSample.region,surface:regionSample.surface==='rock'?'stone':regionSample.surface,shoreDistance:Math.abs(regionSample.shoreDistance)});$('hud').classList.toggle('inOcean',regionSample.height<TERRAIN.waterY);updateWaterView(underwater);
  const swimMode=!locked||regionSample.shoreDistance>8?'hidden':swimmingAt(pos.x,pos.z,feet)?'swim':'shore';if(swimMode!==swimHudMode){swimHudMode=swimMode;$('swimCue').hidden=swimMode==='hidden';$('swimCue').innerHTML=icon('swim')+(swimMode==='swim'?`<span>↑ <kbd>${t('control.space')}</kbd> &nbsp; ↓ <kbd>C</kbd></span>`:`<span>${icon('reef')} ↓</span>`);}
  stream.visible=false;
  if(locked&&held&&tool===3&&target&&!target.outOfReach&&!target.wildId){const pouring=target.propId&&delights.pour(target.propId,dt),result=pouring?{ok:true}:target.propId?{ok:false,code:'ui.toyReady'}:water(state,target.gx,target.gz,dt);if(result.ok){dirty=true;stream.visible=true;if(!pouring&&frames%6===0)splash(target.gx*2,target.gz*2);const origin=new THREE.Vector3(...(toolMesh.userData.spout??[0,.2,-.2])).applyMatrix4(toolMesh.matrixWorld),a=pouring?delights.anchor(target.propId,'pour'):null,end=a?new THREE.Vector3(a.x,a.y,a.z):new THREE.Vector3(target.gx*2,.12,target.gz*2);for(let i=0;i<28;i++){const t=((i/28)+elapsed*1.8)%1;const p=origin.clone().lerp(end,t);p.y+=Math.sin(t*Math.PI)*.35;waterPositions[i*3]=p.x;waterPositions[i*3+1]=p.y;waterPositions[i*3+2]=p.z;}waterGeometry.attributes.position.needsUpdate=true;}else if(frames%45===0)toast(result);}
@@ -692,3 +690,19 @@ function updateReadable(){
 function homeEnvironment(){return {solidsAt:physicalSolids,obstacles:[...world.colliders??[],...activeDiscoveries(state).flatMap(d=>d.solids)],resourcesAt:(x,z)=>nearbyResources(state,x,z,2),actors:[...residents?.bodies?.()??[],...garden?.readingObjects?.().map(a=>({x:a.model.position.x,z:a.model.position.z,y:a.model.position.y,height:.9,radius:a.kind==='deer'?.65:.15}))??[],...marineLife.animals.map(a=>({x:a.x,z:a.z,y:a.y+a.profile.minY,height:a.profile.maxY-a.profile.minY,radius:a.profile.radius}))]};}
 
 function targetHouseInfo(){const key=target?`${target.gx},${target.gz}:${target.baseY??0}`:'';if(key!==houseInfoKey){houseInfoKey=key;houseInfo=key?{readiness:houseReadiness(state.buildings,target.gx,target.gz,target.baseY??0),need:houseNeed(state.buildings,target.gx,target.gz,target.baseY??0)}:null;}return houseInfo;}
+
+function updateViewVisibility(){
+ if(cover)for(const mesh of cover.children){if(!mesh.geometry.boundingBox)mesh.geometry.computeBoundingBox();mesh.visible=nearCoverBounds(mesh.geometry.boundingBox,pos.x,pos.z);}
+ // Keep remote bugs/rigs out of draw and shadow passes without resetting visits,
+ // poses or paid records. Large whales and houses retain their own presentation.
+ for(const g of plantMeshes.values())showPresentation(g,nearPresentation(g,resourceView.x,resourceView.z,48));
+ for(const a of garden.readingObjects())showPresentation(a.model,nearPresentation(a.model,pos.x,pos.z,Math.max(16,actorViewDistance(a.kind)*quality.tier.decor)));
+ for(const {actor,model} of marine)showPresentation(model,nearPresentation(model,pos.x,pos.z,Math.max(16,actorViewDistance(actor.kind)*quality.tier.decor)));
+ for(const a of outerLife.readingObjects())showPresentation(a.model,nearPresentation(a.model,pos.x,pos.z,Math.max(16,actorViewDistance(a.kind)*quality.tier.decor)));
+ for(const g of garden.discoveries.values())showPresentation(g,nearPresentation(g,pos.x,pos.z,64));
+ for(const g of residents.models.values())showPresentation(g,nearPresentation(g,pos.x,pos.z,48));
+ ocean.visible=nearCoverBounds(oceanBounds,pos.x,pos.z,48);if(reefCover)reefCover.visible=nearCoverBounds(reefCover.userData.viewBounds,pos.x,pos.z,48);
+ // Spend the shadow map on the nearby world, including ocean houses, not the whole distant orchard.
+ const shadowX=Math.round(pos.x/2)*2,shadowZ=Math.round(pos.z/2)*2,shadowY=terrainHeight(pos.x,pos.z);sun.target.position.set(shadowX,shadowY,shadowZ);sun.position.set(shadowX-24,shadowY+38,shadowZ+16);
+}
+function updateWaterView(underwater){scene.background=underwater?seaBackground:dayBackground;scene.fog.color.set(underwater?'#5c9fa7':'#b7d7d7');scene.fog.near=underwater?8:38;scene.fog.far=underwater?48:118;waterSurface.material.opacity=underwater?.18:.48;}
