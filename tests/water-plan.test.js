@@ -1,3 +1,4 @@
+import {solidInterval,reefBlocked,reefFloor,reefCeiling} from '../src/reef-collision.js';
 import {Scene} from 'three';
 import vm from 'node:vm';
 import {readFileSync} from 'node:fs';
@@ -122,4 +123,20 @@ test('actual main refreshes picking after world-triggered join replacement',()=>
  assert.ok(c.interactive.includes(current));assert.equal(c.interactive.includes(old),false);
  delights.update(.1,.1);assert.equal(delights.links.get(key),current);assert.ok(c.interactive.includes(current));
  obstacles=[];vm.runInContext('{'+frame+'}',c);assert.ok(c.interactive.includes(delights.links.get(key)));assert.equal(c.interactive.includes(current),false);
+});
+
+test('actual main physical water solids support reef movement queries without missing planes',()=>{
+ const s=funded(),high=tower(s,1,19,2);toy(s,'pump',0,19);toy(s,'gutter',1,19,high);
+ const sys=createDelightSystem({scene:new Scene(),getState:()=>s,getPlayer:()=>({x:0,z:38}),changed(){},event(){},getBodies:()=>[],moveRiders(){},obstacles:()=>[]});
+ sys.sync();const source=readFileSync(new URL('../src/main.js',import.meta.url),'utf8');
+ const c={reefSolids:[],worldRuntime:{solidsAt:()=>[]},delights:sys};vm.createContext(c);
+ vm.runInContext(source.slice(source.indexOf('function naturalSolids('),source.indexOf('function selectedBuild(')),c);
+ const solids=c.physicalSolids(.9,38);assert.ok(solids.length);
+ for(const b of solids){
+  const x=(b.minX+b.maxX)/2,z=(b.minZ+b.maxZ)/2;
+  assert.deepEqual(solidInterval(b,x,z),{minY:b.minY,maxY:b.maxY});
+  assert.equal(reefBlocked([b],x,z,b.minY,{step:0}),true);
+  assert.equal(reefFloor([b],x,z,b.maxY,-100),b.maxY);
+  assert.equal(reefCeiling([b],x,z,b.minY-2),b.minY);
+ }
 });

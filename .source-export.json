@@ -1,5 +1,5 @@
 {
-  "sourceCommit": "10ce3668c9dacaddb25407ae21f0f452aa860e30",
+  "sourceCommit": "381d860d28842ecac1ea7c3697f66c74117dfa98",
   "files": [
     ".gitignore",
     "HOSTING.md",
@@ -431,7 +431,7 @@
     "src/crab-shelter-visits.js": "10bab7286177b411d422916d25bc16f2cedddb4238e425cf5fe0fba3729d6c1e",
     "src/craft-visuals.js": "128fc2b0b6585e53b1a8571315cbb228d9dee10a62a5598e8af1f44e2b974329",
     "src/cultivation.js": "886ae1f127168ea40b2d93bbb16b5379953181f03fe07162a75d7d39739bc0a7",
-    "src/delight-runtime.js": "2947dc05b3c002b825a9d59dfde5faa2bcc60edf9fb42807ec7f22f721d228c3",
+    "src/delight-runtime.js": "eb35851ccbd248142d3c4a1af1e06c054dd91a5bb973ddd6ffa99ed6b1c1524c",
     "src/delight-visuals.js": "65ad683c16c5b4f35d185fcd047c8b8837e75828150d192d0c3d34840e7e7a3c",
     "src/delights.js": "433061858df383b49e59e82f04c138b63bdb778412ba2dc3c759425924d0a792",
     "src/flower-targeting.js": "c33e5af64564ca2d7a9d970a67accdf1be9389c08d8d5238f9f3cdf1ca49c247",
@@ -530,7 +530,7 @@
     "tests/water-flow.test.js": "26895f4aa4f67d100c714abea0dbe067176ef66ffa5d520b3352dbaece919e4c",
     "tests/water-integration.test.js": "06651a90aca1dfb6568a7ab6560043bf5e9378d6080879d371ebeffc881207ae",
     "tests/water-join-visuals.test.js": "e23abb4c944b676e71ba04bfc62ddaf338f783662a77ccc4c02f1ecbb34b6e07",
-    "tests/water-plan.test.js": "ad8fb93a9302ae660b90b13abbdcdf9a94fee127f7f10dd34197c7a805169890",
+    "tests/water-plan.test.js": "e895645c9ea16fc84874a5ddf211562e0377f6ad7c57a921a49b7155a952d703",
     "tests/world-runtime.test.js": "4456e7b95eae5dec796593fd096b6b3dafc1c87b8baee317db678920766f5ac7",
     "tests/world-state.test.js": "d81bd543ee96f7c41483a47814d1dbf7625fca862cdff61aebc9782d5f14dcfa"
   }

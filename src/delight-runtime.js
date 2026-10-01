@@ -26,7 +26,8 @@ export function createDelightSystem({scene,getState,getPlayer,changed,event,cont
    const configured=flow.configure(network.nodes,network.edges);
    network.rejected.push(...configured.rejected);
    network.edges=network.edges.filter(e=>configured.edges.some(a=>a.from===e.from&&a.to===e.to&&a.port===e.port));
-   waterSolids=network.joins.flatMap(p=>p.boxes);
+   // Reef movement queries accept hulls; empty planes preserve these exact AABBs.
+   waterSolids=network.joins.flatMap(p=>p.boxes.map(b=>({...b,planes:[]})));
    const wanted=new Set();
    for(const p of props)for(const port of waterPorts(p).filter(a=>a.name.startsWith('outlet'))){
     const key=p.id+':'+port.name,edge=network.edges.find(e=>e.from===p.id&&e.port===port.name);
