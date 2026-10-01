@@ -229,11 +229,15 @@ function showHomeStatus(key){
  clearTimeout(homeStatusTimer);homeStatusKey=key;renderHomeStatus();
  homeStatusTimer=setTimeout(()=>{homeStatusKey='';renderHomeStatus();},4000);
 }
-function refreshPause(){renderHomeStatus();$('overlay').dataset.mode=started?'pause':'landing';const key=started?'ui.resume':hasSavedWorld?'ui.continue':'ui.play';$('start').innerHTML=icon('play')+'<span>'+t(key)+'</span>';$('start').setAttribute('aria-label',t(key));$('pauseTitle').textContent=started||hasSavedWorld?t('ui.paused'):'';$('closeCatalog').innerHTML=icon('play')+'<span>'+t(key)+'</span>';$('closeCatalog').setAttribute('aria-label',t(key));}
+function refreshPause(){renderHomeStatus();$('overlay').dataset.mode=started?'pause':'landing';const key=started?'ui.resume':hasSavedWorld?'ui.continue':'ui.play';$('start').innerHTML=icon('play')+'<span>'+t(key)+'</span>';$('start').setAttribute('aria-label',t(key));$('pauseTitle').textContent=started||hasSavedWorld?t('ui.paused'):'';const closeKey=started?'ui.resume':'ui.back';$('closeCatalog').innerHTML=icon('play')+'<span>'+t(closeKey)+'</span>';$('closeCatalog').setAttribute('aria-label',t(closeKey));}
+function closeMenu(){
+ if(started){requestLock();return;}
+ catalogOpen=false;outfitResident=null;$('catalog').hidden=true;$('wardrobe').hidden=true;$('overlay').hidden=false;clearReading();refreshPause();$('start').focus();
+}
 function showCatalog(show=true,mode=menuMode){
- clearReading();if(show){audio.pause();clearEffects();}resetActions();$('wardrobe').hidden=true;outfitResident=null;catalogOpen=show;$('catalog').hidden=!show;held=false;keys.clear();
- if(show){refreshPause();menuMode=mode;locked=false;document.exitPointerLock?.();$('overlay').hidden=true;renderCatalog();$('catalogBody').scrollTop=0;(mode==='journal'?$('bookLanguage'):$('materialCards').querySelector('.chosen')).focus({preventScroll:true});}
- else requestLock();
+ clearReading();if(show){audio.pause();clearEffects();}resetActions();rightDrag=false;homeHeld=0;$('wardrobe').hidden=true;outfitResident=null;catalogOpen=show;$('catalog').hidden=!show;held=false;keys.clear();
+ if(show){refreshPause();menuMode=mode;locked=false;document.exitPointerLock?.();$('overlay').hidden=true;renderCatalog();$('catalogBody').scrollTop=0;$(mode==='journal'?'journalTab':'buildTab').focus({preventScroll:true});}
+ else closeMenu();
 }
 // Keep the actual focused/hovered buttons, even when their localized contents change.
 function reconcileCards(id,html){
@@ -273,14 +277,21 @@ function renderCatalog(){
  requestAnimationFrame(updateCatalogScroll);
 }
 function setupLivingUI(){
- const mutes=[$('muteButton'),$('pauseMute')],refresh=()=>{const label=t(audio.muted?'aria.unmute':'aria.mute');for(const mute of mutes){mute.innerHTML=icon(audio.muted?'mute':'sound')+(mute.id==='pauseMute'?'<span>'+label+'</span>':'');mute.setAttribute('aria-label',label);mute.setAttribute('aria-pressed',String(audio.muted));}};refresh();for(const mute of mutes)mute.onclick=e=>{e.stopPropagation();audio.toggle();refresh();};
+ const refresh=()=>{
+  const label=t(audio.muted?'aria.unmute':'aria.mute'),status=t(audio.muted?'sound.off':'sound.on');
+  $('pauseMute').innerHTML=icon(audio.muted?'mute':'sound')+'<span>'+label+'</span>';$('pauseMute').setAttribute('aria-label',label);$('pauseMute').setAttribute('aria-pressed',String(audio.muted));
+  $('soundStatus').innerHTML=icon(audio.muted?'mute':'sound');$('soundStatus').setAttribute('aria-label',status);$('soundStatus').title=status;
+  $('settingsHint').innerHTML='<kbd>Esc</kbd><span>'+t('ui.settings')+'</span>';
+  $('masterVolume').value=audio.volume;$('volumeValue').textContent=audio.volume+'%';
+ };refresh();$('pauseMute').onclick=e=>{e.stopPropagation();audio.toggle();refresh();};
+ $('masterVolume').oninput=e=>{audio.setVolume(Number(e.target.value));refresh();};
  $('friendButton').innerHTML=icon('shirt')+'<kbd>F</kbd>';$('friendButton').onclick=()=>{if(nearestFriend)openWardrobe(nearestFriend.id);};
- $('closeWardrobe').innerHTML=icon('play');$('closeWardrobe').onclick=requestLock;
+ $('closeWardrobe').innerHTML=icon('play');$('closeWardrobe').onclick=closeMenu;
 }
 function openWardrobe(id){
  clearReading();
  const r=state.residents.find(r=>r.id===id);if(!r)return;
- resetActions();audio.pause();clearEffects();locked=false;catalogOpen=true;keys.clear();outfitResident=id;$('catalog').hidden=true;$('overlay').hidden=true;$('wardrobe').hidden=false;document.exitPointerLock?.();
+ resetActions();rightDrag=false;homeHeld=0;audio.pause();clearEffects();locked=false;catalogOpen=true;keys.clear();outfitResident=id;$('catalog').hidden=true;$('overlay').hidden=true;$('wardrobe').hidden=false;document.exitPointerLock?.();
  reconcileCards('outfitCards',[0,1,2,3].map(o=>`<button class="outfitCard ${o===(r.outfit??0)?'chosen':''}" data-outfit="${o}" data-word="noun.clothes" data-picture="${r.habitat==='ocean'?'diver':'resident'}:${r.variant}:${o}" aria-label="${t('ui.outfit',{number:o+1})}" aria-pressed="${o===(r.outfit??0)}">${picture(`${r.habitat==='ocean'?'diver':'resident'}:${r.variant}:${o}`,t('ui.outfit',{number:o+1}))}${icon(o===(r.outfit??0)?'check':'shirt')}</button>`).join(''));
  $('outfitCards').querySelectorAll('button').forEach(b=>b.onclick=()=>{if(setOutfit(state,id,Number(b.dataset.outfit)).ok){dirty=true;residents.sync();save();openWardrobe(id);menuReading=currentReading=semanticElement(b);renderReading();}});
 }
@@ -288,34 +299,58 @@ function updateFriendButton(){
  nearestFriend=(state.residents??[]).filter(r=>r.x!==null&&Math.hypot(r.x-pos.x,residentFloor(r.x,r.z,r.baseY??0)-feet,r.z-pos.z)<4.5).find(r=>{const point=new THREE.Vector3(r.x,residentFloor(r.x,r.z,r.baseY??0)+1,r.z),p=point.clone().project(camera);if(!(p.z>=-1&&p.z<=1&&Math.abs(p.x)<.9&&Math.abs(p.y)<.9))return false;const direction=point.clone().sub(camera.position),ray=new THREE.Raycaster(camera.position,direction.clone().normalize(),0,direction.length());return ray.intersectObjects([...buildMeshes.values()],true).length===0;});
  $('friendButton').hidden=!locked||!nearestFriend;
 }
-function activateFallback(){fallbackLook=true;locked=true;started=true;catalogOpen=false;$('overlay').hidden=true;$('catalog').hidden=true;keys.clear();held=false;saveStatus('ui.fallback');toast('ui.fallbackToast');wake();}
+function activateFallback(){document.exitPointerLock?.();fallbackLook=true;locked=true;started=true;catalogOpen=false;$('overlay').hidden=true;$('catalog').hidden=true;keys.clear();held=false;saveStatus('ui.fallback');toast('ui.fallbackToast');wake();}
+function lockFailed(){if(started&&!fallbackLook)pauseGame();else activateFallback();}
 function requestLock(){
  if(!runtimeReady){pendingStart=true;return;}
  clearReading();document.activeElement?.blur();
  resetActions();audio.start();outfitResident=null;$('wardrobe').hidden=true;catalogOpen=false;$('catalog').hidden=true;
  if(fallbackLook||!canvas.requestPointerLock){activateFallback();return;}
- try{const pending=canvas.requestPointerLock();pending?.catch(()=>activateFallback());}catch{activateFallback();}
+ try{const pending=canvas.requestPointerLock();pending?.catch(lockFailed);}catch{lockFailed();}
 }
 $('overlay').addEventListener('click',e=>{if(started&&$('overlay').dataset.mode==='pause'&&!e.target.closest('button,a,input,select,option,label,summary,details')){e.preventDefault();e.stopPropagation();requestLock();}});
 canvas.addEventListener('click',()=>{if(!locked&&!catalogOpen&&outfitResident===null)requestLock();});
-$('start').onclick=requestLock;for(const id of ['menuButton','pauseBuild','buildTab'])$(id).onclick=()=>showCatalog(true,'build');for(const id of ['journalButton','pauseJournal','journalTab'])$(id).onclick=()=>showCatalog(true,'journal');$('closeCatalog').onclick=()=>showCatalog(false);
+$('start').onclick=requestLock;for(const id of ['pauseBuild','buildTab'])$(id).onclick=()=>showCatalog(true,'build');for(const id of ['pauseJournal','journalTab'])$(id).onclick=()=>showCatalog(true,'journal');$('closeCatalog').onclick=()=>showCatalog(false);
 $('reset').onclick=()=>{
  if(!confirm(t('ui.resetConfirm')))return;
  // Persist first: a denied write leaves the old world intact. Reload disposes all old runtime identities.
  try{localStorage.setItem(SAVE_KEY,serialize(freshState()));dirty=false;location.reload();}
  catch{saveStatus('ui.saveUnavailable');$('welcomeSave').textContent=t('ui.saveUnavailable');}
 };
+$('hud').addEventListener('click',e=>{if(document.pointerLockElement===canvas){e.preventDefault();e.stopImmediatePropagation();}},true);
 document.addEventListener('pointerlockchange',()=>{if(fallbackLook)return;resetActions();locked=document.pointerLockElement===canvas;held=false;keys.clear();if(locked){started=true;$('overlay').hidden=true;$('catalog').hidden=true;catalogOpen=false;wake();}else if(!catalogOpen){clearReading();audio.pause();clearEffects();$('overlay').hidden=false;refreshPause();}save();});
-document.addEventListener('pointerlockerror',activateFallback);
+document.addEventListener('pointerlockerror',lockFailed);
 document.addEventListener('mousemove',e=>{if(locked&&(!fallbackLook||rightDrag)){yaw-=e.movementX*.0022*(display.comfort?.65:1);pitch=Math.max(-1.45,Math.min(1.45,pitch-e.movementY*.0022*(display.comfort?.65:1)));dirty=true;}});
 document.addEventListener('keydown',e=>{
- if(!locked){if(e.code==='Escape'){e.preventDefault();catalogOpen=false;outfitResident=null;$('catalog').hidden=true;$('wardrobe').hidden=true;$('overlay').hidden=false;clearReading();refreshPause();$('start').focus();}return;}
- if(e.target.closest('select,input,textarea')||e.target.closest('button,a,summary')&&['Space','Enter'].includes(e.code))return;
- if(['Tab','Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code))e.preventDefault();
- if(e.code==='KeyF'&&locked&&nearestFriend){openWardrobe(nearestFriend.id);return;}
- if(e.code==='Escape'&&fallbackLook){audio.pause();clearEffects();resetActions();locked=false;held=false;rightDrag=false;clearReading();keys.clear();catalogOpen=false;$('catalog').hidden=true;$('overlay').hidden=false;refreshPause();save();return;}
- if(e.code==='Tab'||e.code==='KeyJ'){e.preventDefault();showCatalog(true,e.code==='Tab'?'build':'journal');return;}
- if(!locked)return;if(!e.repeat)audio.start();keys.add(e.code);if(e.repeat)return;
+ // Native controls keep their text, selection and range editing keys.
+ if(e.isComposing||e.metaKey||e.altKey||e.target.closest('select,input,textarea,[contenteditable]:not([contenteditable="false"])'))return;
+ // Ctrl is also the held swim-descent control; keep movement while diving.
+ if(e.ctrlKey){
+  if(!locked||!['ControlLeft','ControlRight','KeyW','KeyA','KeyS','KeyD','KeyC','Space','ShiftLeft','ShiftRight','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code))return;
+  e.preventDefault();
+ }
+ if(e.target.closest('button,a,summary')&&['Space','Enter'].includes(e.code))return;
+ if(e.code==='Escape'){
+  if(e.repeat)return;e.preventDefault();
+  if(catalogOpen){closeMenu();return;}
+  if(!locked){if(started)requestLock();return;}
+  if(fallbackLook)pauseGame();
+  // Native Escape releases pointer lock in the browser; pointerlockchange pauses.
+  return;
+ }
+ if(e.code==='KeyJ'||e.code==='Tab'&&!e.shiftKey){
+  e.preventDefault();if(e.repeat)return;
+  const mode=e.code==='Tab'?'build':'journal';
+  if(catalogOpen&&outfitResident===null&&menuMode===mode)closeMenu();else showCatalog(true,mode);
+  return;
+ }
+ if(e.code==='KeyF'&&!e.repeat){
+  if(outfitResident!==null){closeMenu();return;}
+  if(locked&&nearestFriend){openWardrobe(nearestFriend.id);return;}
+ }
+ if(!locked)return;
+ if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code))e.preventDefault();
+ if(!e.repeat)audio.start();keys.add(e.code);if(e.repeat)return;
  if(/^Digit[1-7]$/.test(e.code)){chooseTool(Number(e.code.at(-1))-1);return;}
  if(e.code==='KeyE')browse(1);if(e.code==='KeyQ')browse(-1);
  if(e.code==='KeyR'&&tool===5){rotateChoice();}

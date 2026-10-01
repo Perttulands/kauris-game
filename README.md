@@ -37,16 +37,16 @@ Your world is saved automatically in this browser. Use the same browser and site
 | Change building material | M or the material picture |
 | Rotate a building piece | R or the rotate picture |
 | Lower / raise building level | Z / X or − / + |
-| Build menu | Tab or the house button |
-| Book, seeds and help | J or the book button |
-| Pause / back | Escape |
+| Build menu / close Build | Tab |
+| Book, seeds and help / close Book | J |
+| Pause / close an open menu | Escape |
 | Resume | Play triangle or paused background |
 | Neighbour clothes | Shirt picture or F nearby |
-| Sound | Speaker button |
+| Sound and volume | Escape → pause settings |
 | Return home | Hold H or use the pause menu |
 | Read a menu picture's name | Hover or focus with Tab / Shift-Tab |
 
-Tab and arrow keys navigate normally inside menus. Menus pause the world, and their contents can be scrolled. Plain walls have two placement directions; other pieces have four.
+J and Tab switch menus; pressing the same shortcut again resumes play. Escape closes an open menu directly. Before play has started, closing a menu returns to the landing screen. Shift-Tab and arrow keys navigate menu controls; native input and select controls keep their editing keys. Menus pause the world, and their contents can be scrolled. Plain walls have two placement directions; other pieces have four.
 
 ## Grow and build
 
@@ -58,7 +58,7 @@ Aim at a nearby object and click the pictured hand to use it. Pour into a water 
 
 Hold **H** while playing to return home, or use **Return home** in the pause menu. Your first completed house on dry land becomes home; **Make this my home** chooses another nearby completed house.
 
-The pause menu also has graphics settings and a calmer camera option. Automatic graphics adjusts picture quality to the device; Low reduces shadows and power use. Calmer camera slows looking and removes the walking tool bob.
+Sound and volume are saved in this browser. The pause menu also has graphics settings and a calmer camera option. Automatic graphics adjusts picture quality to the device; Low reduces shadows and power use. Calmer camera slows looking and removes the walking tool bob.
 
 ## Explore
 

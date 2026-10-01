@@ -11,12 +11,12 @@ function target(param,value,time,seconds){
  param.setTargetAtTime(value,time,Math.max(.005,seconds/3));
 }
 export function createAudio(storage){
- let context,master,compressor,manifest,manifestJob,muted=false,paused=true,epoch=0,quietTimer;
+ let context,master,compressor,manifest,manifestJob,muted=false,volume=100,paused=true,epoch=0,quietTimer;
  let decodedBytes=0,loading=0,highWater=0,loadHighWater=0,manifestAttempts=0;
  let listener={x:0,y:0,z:0,yaw:0,waterDistance:32,submersion:0};
  const buffers=new Map(),states=new Map(),attempts=new Map(),active=new Set(),loops=new Map(),last=new Map(),variants=new Map(),events=[],diagnostics=[];
  const counts={admitted:0,dropped:0,stopped:0};
- try{storage??=globalThis.localStorage;muted=storage?.getItem('kauris-muted')==='1';}catch{}
+ try{storage??=globalThis.localStorage;muted=storage?.getItem('kauris-muted')==='1';const saved=storage?.getItem('kauris-volume');if(saved!==null&&saved!==undefined&&saved.trim()!==''&&Number.isFinite(Number(saved)))volume=clamp(Number(saved),0,100);}catch{}
  const time=()=>context?.currentTime??0;
  function note(reason,kind){counts.dropped++;if(diagnostics.at(-1)?.reason===reason&&diagnostics.at(-1)?.kind===kind)return;diagnostics.push({reason,kind,time:time()});if(diagnostics.length>64)diagnostics.shift();}
  function bounded(map,key,value){map.delete(key);map.set(key,value);if(map.size>128)map.delete(map.keys().next().value);}
@@ -92,7 +92,7 @@ export function createAudio(storage){
     compressor=context.createDynamicsCompressor();compressor.threshold.value=-12;compressor.knee.value=10;compressor.ratio.value=5;compressor.attack.value=.005;compressor.release.value=.15;
     master.connect(compressor).connect(context.destination);
    }
-   Promise.resolve(context.resume()).then(()=>{if(token===epoch&&!paused&&!muted)target(master.gain,.8,time(),.03);}).catch(()=>{});
+   Promise.resolve(context.resume()).then(()=>{if(token===epoch&&!paused&&!muted)target(master.gain,.8*volume/100,time(),.03);}).catch(()=>{});
    if(resuming)for(const [id,state] of states)if(state==='failed'&&attempts.get(id)<2)states.delete(id);
    load();
   }catch{note('unavailable','context');}
@@ -165,7 +165,7 @@ export function createAudio(storage){
   if(voice){update(voice,{},level,2);const hz=12000*(650/12000)**listener.submersion;if(Math.abs((voice.hz??12000)-hz)>1){target(voice.filter.frequency,hz,time(),1.5);voice.hz=hz;}}
  }
  function pause(){paused=true;quiet();}
- return {start,pause,play,setContinuous,environment,get muted(){return muted;},toggle(){muted=!muted;try{storage?.setItem('kauris-muted',muted?'1':'0');}catch{}if(muted)quiet();else if(!paused)start();return muted;},
-  snapshot(){reap();return {muted,paused,state:context?.state??'not-started',voices:active.size,voiceLimit:MAX_VOICES,highWater,decodedBytes,bufferBytes:decodedBytes,loading,loadHighWater,ready:buffers.size,failed:[...states.values()].filter(s=>s==='failed').length,manifest:!!manifest,submersion:listener.submersion,counts:{...counts},continuous:[...loops.values()].map(v=>({id:v.id,kind:v.kind,asset:v.asset,releasing:v.releaseAt!==undefined,gain:v.targetGain})),events:[...events],diagnostics:[...diagnostics]};}
+ return {start,pause,play,setContinuous,environment,get volume(){return volume;},setVolume(value){if(!Number.isFinite(value))return;volume=clamp(value,0,100);try{storage?.setItem('kauris-volume',String(volume));}catch{}if(master&&!paused&&!muted)target(master.gain,.8*volume/100,time(),.03);},get muted(){return muted;},toggle(){muted=!muted;try{storage?.setItem('kauris-muted',muted?'1':'0');}catch{}if(muted)quiet();else if(!paused)start();return muted;},
+  snapshot(){reap();return {muted,volume,paused,state:context?.state??'not-started',voices:active.size,voiceLimit:MAX_VOICES,highWater,decodedBytes,bufferBytes:decodedBytes,loading,loadHighWater,ready:buffers.size,failed:[...states.values()].filter(s=>s==='failed').length,manifest:!!manifest,submersion:listener.submersion,counts:{...counts},continuous:[...loops.values()].map(v=>({id:v.id,kind:v.kind,asset:v.asset,releasing:v.releaseAt!==undefined,gain:v.targetGain})),events:[...events],diagnostics:[...diagnostics]};}
  };
 }

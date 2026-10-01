@@ -16,7 +16,7 @@ class Param {
 class Context {
  constructor(){this.currentTime=0;this.sampleRate=48000;this.state='suspended';this.destination={};this.sources=[];Context.latest=this;}
  node(extra={}){return {disconnects:0,connect(){return this},disconnect(){this.disconnects++},...extra};}
- createGain(){return this.node({gain:new Param()});}
+ createGain(){const node=this.node({gain:new Param()});(this.gains??=[]).push(node);return node;}
  createStereoPanner(){return this.node({pan:new Param()});}
  createBiquadFilter(){return this.node({frequency:new Param()});}
  createDynamicsCompressor(){return this.node(Object.fromEntries(['threshold','knee','ratio','attack','release'].map(k=>[k,new Param()])));}
@@ -166,4 +166,21 @@ test('Return home restores only active current ambience and preserves paused/mut
   assert.equal(after.events.filter(e=>e.kind==='dig').length,before.events.filter(e=>e.kind==='dig').length,'no one-shot replay');
   assert.ok(!after.continuous.some(v=>v.id==='player:water'),'no held pour replay');
  });
+});
+
+test('master volume preserves old default gain, mute choice and paused silence',async()=>{
+ await fixture(async(a,c)=>{
+  await Promise.resolve();assert.equal(a.volume,100);assert.equal(c.gains[0].gain.value,.8);
+  a.setVolume(35);assert.ok(Math.abs(c.gains[0].gain.value-.28)<1e-9);
+  a.toggle();a.setVolume(20);assert.equal(c.gains[0].gain.value,0);a.toggle();await Promise.resolve();assert.ok(Math.abs(c.gains[0].gain.value-.16)<1e-9);
+  a.pause();await sleep(50);a.setVolume(70);a.toggle();a.toggle();assert.equal(c.state,'suspended');assert.equal(c.gains[0].gain.value,0);assert.equal(a.snapshot().paused,true);
+  a.start();await Promise.resolve();assert.ok(Math.abs(c.gains[0].gain.value-.56)<1e-9);
+  a.setVolume(0);assert.equal(c.gains[0].gain.value,0);a.setVolume(200);assert.equal(a.volume,100);a.setVolume(-1);assert.equal(a.volume,0);a.setVolume(NaN);assert.equal(a.volume,0);
+ });
+});
+test('volume and mute persist independently and corrupt volume keeps the old default',()=>{
+ const data=new Map(),store={getItem:k=>data.get(k)??null,setItem:(k,v)=>data.set(k,v)};
+ const a=createAudio(store);a.setVolume(37);a.toggle();const reloaded=createAudio(store);
+ assert.equal(reloaded.volume,37);assert.equal(reloaded.muted,true);reloaded.toggle();assert.equal(reloaded.volume,37);assert.equal(reloaded.snapshot().paused,true);
+ for(const bad of ['', 'no', 'Infinity']){data.set('kauris-volume',bad);assert.equal(createAudio(store).volume,100);}
 });
