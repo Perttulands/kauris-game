@@ -1,5 +1,5 @@
 {
-  "sourceCommit": "7d9740bc85bb0265ef2c1c687c6b082bd1c2ee15",
+  "sourceCommit": "2a5067218f51f69fa9dd20c94a75870177036607",
   "files": [
     ".gitignore",
     "HOSTING.md",
@@ -270,7 +270,7 @@
   "sha256": {
     ".gitignore": "6eb7e50caffbe5bf9068af07b4756ddf66b99f586a5e1cc8a0553e3793c6cad9",
     "HOSTING.md": "aff8e08458e051f4278eb5792dc30fe7160712d0d1b12204fabbcc8ff827be53",
-    "README.md": "ac2d2b9c383c82d6b9c45063d73b3360ccf22f3098d8aa1e33ae8db45284344f",
+    "README.md": "aa59c4e5bf54dc7d83ff584f4b5fb49427faa6074f5e313e333d93fa6ee02ca8",
     "hosting/Caddyfile": "b6187df2f9ee751b117361375aa368f0f401f15b4c4820b075bd3d695f3e817f",
     "hosting/kauris-static.service": "e2e74b87377621c92c8097b454b75e1945b59c6658f5538483f3d62714535d91",
     "index.html": "043f4f8a0432fb2ae099a9115f22c441702e4200cb6c266a482244ef2d2a61d5",
