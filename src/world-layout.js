@@ -1,3 +1,4 @@
+import {seaHabitats} from './sea-habitats.js';
 import {GRID,cellAt,chunkAt,chunkBounds,sampleCell,landDistance} from './surface-grid.js';
 const freeze=Object.freeze;
 export const WORLD_CONFIG=freeze({version:2,seed:GRID.seed,chunkSize:GRID.chunkSize,gridSize:GRID.size});
@@ -111,5 +112,6 @@ export function describeChunk(cx,cz){
   const h=habitats[i];if(chunkAt(h.x,h.z).cx!==cx||chunkAt(h.x,h.z).cz!==cz)continue;
   decorations.push({id:`w1:h:${i}`,kind:h.kind,x:h.x,y:sampleWorld(h.x,h.z).height,z:h.z,yaw:hash(cx,cz,i,61)*Math.PI*2,scale:1,variant:i%3});
  }
+ decorations.push(...seaHabitats(cx,cz));
  return {id:`w1:${cx}:${cz}`,bounds,decorations,solids,resources};
 }

@@ -1,3 +1,4 @@
+import {GRID} from './surface-grid.js';
 export const SPECIAL_SEEDS=['golden','starflower'];
 export const isFlower=kind=>kind==='flowers'||kind==='starflower';
 export const DISCOVERIES=[
@@ -24,6 +25,6 @@ export function setOutfit(s,id,outfit){
  const r=s.residents.find(r=>r.id===id);if(!r||!Number.isInteger(outfit)||outfit<0||outfit>3)return {ok:false};r.outfit=outfit;return {ok:true};
 }
 export function gardenAttractors(s){
- const plots=Object.values(s.plots).filter(p=>p.phase==='filled'&&p.seed);
+ const plots=Object.values(s.plots).filter(p=>p.phase==='filled'&&p.seed&&(p.baseY??0)>=GRID.waterY);
  return {flowers:plots.filter(p=>isFlower(p.seed)&&p.growth>=.55),trees:plots.filter(p=>!isFlower(p.seed)&&p.growth>=.95),leafy:plots.filter(p=>['oak','birch','willow','golden'].includes(p.seed)&&p.growth>=.65)};
 }

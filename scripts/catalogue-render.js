@@ -21,7 +21,7 @@ export function renderCatalogue(renderer){
    model.position.sub(center);scene.add(model);
    // Thin floors/roofs project wider than their axis-aligned longest side. One
    // padded world-space frame across ALL materials preserves comparison scale.
-   const r=/^piece:(floor|roof):/.test(key)?1.7:Math.max(extent.y,extent.x,extent.z)*.69;camera.left=-r;camera.right=r;camera.top=r;camera.bottom=-r;camera.position.set(key==='tool:hose'?-5:5,3.2,6);camera.lookAt(0,0,0);camera.updateProjectionMatrix();
+   const r=/^piece:(floor|roof):/.test(key)?1.7:Math.max(extent.y,extent.x,extent.z)*(key==='prop:cornerChannel'?.80:.69);camera.left=-r;camera.right=r;camera.top=r;camera.bottom=-r;camera.position.set(key==='tool:hose'?-5:5,3.2,6);camera.lookAt(0,0,0);camera.updateProjectionMatrix();
    renderer.clear();renderer.render(scene,camera);renderer.readRenderTargetPixels(target,0,0,size,size,pixels);
    for(let y=0;y<size;y++)img.data.set(pixels.subarray((size-1-y)*size*4,(size-y)*size*4),y*size*4);
    ctx.putImageData(img,0,0);pictures[key]=canvas.toDataURL('image/png');scene.remove(model);model.traverse(o=>{if(o.isSkinnedMesh)o.skeleton.dispose();});

@@ -18,11 +18,11 @@ test('legacy opposite walls preserve exact boxes, boundary14, doorway normals, p
  assert.deepEqual(deserialize(serialize(loaded)),loaded);
  const floor=loaded.buildings.find(b=>b.kind==='floor');assert.equal(remove(loaded,floor.id).ok,false);
 });
-test('underwater paid home uses seabed elevation, diver identity, repair and reload; farming remains land only',()=>{
+test('underwater paid home uses seabed elevation, diver identity, repair and reload; submerged cultivation becomes legal',()=>{
  const s=freshState();s.inventory.wood=100;const base=terrainHeight(0,70)+.3;for(const p of room(0,35,base))assert.ok(build(s,p).ok,JSON.stringify(p));
  assert.equal(s.residents.length,1);assert.equal(s.residents[0].habitat,'ocean');assert.equal(s.residents[0].baseY,base);assert.equal(findHomes(s.buildings).length,1);
  s.player={x:0,y:-5.2,z:70,yaw:0,pitch:.2};const d=deserialize(serialize(s));assert.equal(d.player.y,-5.2);assert.deepEqual(d.residents,s.residents);
- assert.equal(build(d,part('floor',1,25,0,0)).ok,false);assert.equal(build(d,part('floor',1,35,0,3)).ok,false);assert.equal(dig(d,1,25).ok,false);
+ assert.equal(build(d,part('floor',1,25,0,0)).ok,false);assert.equal(build(d,part('floor',1,35,0,3)).ok,false);assert.equal(dig(d,1,25).ok,true);
  const roof=d.buildings.find(b=>b.kind==='roof'),id=d.residents[0].id;assert.ok(remove(d,roof.id).ok);assert.equal(d.residents[0].status,'waiting');assert.ok(build(d,part('roof',0,35,3,base)).ok);assert.equal(d.residents[0].id,id);assert.equal(d.residents.length,1);
  const bad=JSON.parse(serialize(d));bad.buildings[0].baseY=null;assert.throws(()=>deserialize(JSON.stringify(bad)));
  const badPlayer=JSON.parse(serialize(d));badPlayer.player.y=-100;assert.throws(()=>deserialize(JSON.stringify(badPlayer)));

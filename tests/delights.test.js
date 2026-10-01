@@ -9,7 +9,7 @@ const rich=()=>{const s=freshState();for(const k of Object.keys(s.inventory))s.i
 test('all five materials retain exact house costs; paid toys refund once and reject unaffordable/duplicate use',()=>{
  assert.deepEqual(MATERIALS,['wood','copper','iron','diamond','fiber']);const s=freshState();
  assert.equal(placeDelight(s,toy('lamp')).ok,false);assert.equal(s.delights.length,0);
- for(const kind of Object.keys(DELIGHTS)){const r=rich(),spec=DELIGHTS[kind],p=kind==='crabShelter'?toy(kind,0,19,0,terrainHeight(0,38)):toy(kind);const before=r.inventory[spec.material];const out=placeDelight(r,p);assert.ok(out.ok,kind);assert.equal(r.inventory[spec.material],before-spec.cost);assert.equal(placeDelight(r,p).ok,false);assert.equal(removeDelight(r,out.prop.id).ok,true);assert.equal(r.inventory[spec.material],before);assert.equal(removeDelight(r,out.prop.id).ok,false);}
+ for(const kind of Object.keys(DELIGHTS)){const r=rich(),spec=DELIGHTS[kind],p=kind==='pump'?toy(kind,0,35,0,terrainHeight(0,70)):kind==='crabShelter'?toy(kind,0,19,0,terrainHeight(0,38)):toy(kind);const before=r.inventory[spec.material];const out=placeDelight(r,p);assert.ok(out.ok,kind);assert.equal(r.inventory[spec.material],before-spec.cost);assert.equal(placeDelight(r,p).ok,false);assert.equal(removeDelight(r,out.prop.id).ok,true);assert.equal(r.inventory[spec.material],before);assert.equal(removeDelight(r,out.prop.id).ok,false);}
  const f=rich();assert.ok(build(f,floor(0,0,'fiber')).ok);assert.equal(f.inventory.fiber,98);
 });
 test('old version1 paid world preserved; validated optional props support raised hosts and reject accounting tampering',()=>{

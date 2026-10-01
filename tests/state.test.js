@@ -22,7 +22,7 @@ test('build costs, shared edges, support and exact refunds',()=>{
 });
 test('cultivation and construction do not overlap',()=>{
  const s=funded();dig(s,0,0);assert.equal(build(s,piece()).ok,false);fill(s,0,0);assert.ok(build(s,piece()).ok);assert.equal(dig(s,0,0).ok,false);
- assert.equal(dig(s,100,0).ok,false);
+ assert.equal(dig(s,500000,0).ok,false);
 });
 test('save round-trip preserves paid structures and plants; tampering cannot issue refunds',()=>{
  const s=funded();build(s,piece());build(s,piece('window'));build(s,piece('roof',1));dig(s,2,2);plant(s,2,2,'diamond');fill(s,2,2);water(s,2,2,.1);tick(s,.1);

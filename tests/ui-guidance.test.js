@@ -38,9 +38,9 @@ test('looking down is not promised when elevated ground or seabed remains beyond
  const ray=new Ray(new Vector3(0,-.5,80),new Vector3(0,-1,0)),hit=ray.intersectPlane(new Plane(new Vector3(0,1,0),7.2),new Vector3());assert.ok(ray.origin.distanceTo(hit)>6,'even straight down cannot reach seabed');
 });
 
-test('dig preview and action agree on meadow boundary and paid supports without preview mutation',()=>{
+test('dig preview and action agree on submerged soil and paid supports without preview mutation',()=>{
  const s=freshState(),before=serialize(s),sea=validateDig(s,1,30);
- assert.equal(sea.code,'message.insideMeadow');assert.equal(sea.ok,false);assert.equal(serialize(s),before);assert.deepEqual(dig(s,1,30),sea);assert.equal(serialize(s),before);
+ assert.equal(sea.code,'message.dug');assert.equal(sea.ok,true);assert.equal(serialize(s),before);assert.deepEqual(dig(s,1,30),sea);assert.equal(s.plots['1,30'].phase,'hole');delete s.plots['1,30'];
  const legal=validateDig(s,0,3);assert.ok(legal.ok);assert.equal(serialize(s),before);assert.deepEqual(dig(s,0,3),legal);assert.equal(s.plots['0,3'].phase,'hole');assert.equal(validateDig(s,0,3).code,'message.holeReady');
  s.inventory.wood=2;const b=build(s,piece('floor')).piece;assert.ok(b);const paid=serialize(s),blocked=validateDig(s,0,0);assert.equal(blocked.code,'message.removeBuilding');assert.deepEqual(dig(s,0,0),blocked);assert.equal(serialize(s),paid);
 });

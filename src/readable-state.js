@@ -1,6 +1,7 @@
+import {plotMoisture} from './state.js';
 import {houseReadiness} from './residents.js';
 import {elevation,edgeKey,wallLike} from './building.js';
-export function plotStage(p){return p?.phase==='filled'&&p.seed?(p.growth>=1?'harvest':p.water>0?'wet':'dry'):null;}
+export function plotStage(p){return p?.phase==='filled'&&p.seed?(p.growth>=1?'harvest':plotMoisture(p)>0?'wet':'dry'):null;}
 export function houseNeed(buildings,gx,gz,baseY=0){
  const h=houseReadiness(buildings,gx,gz,baseY);if(!h||h.complete)return null;
  const cells=new Set(h.cells),walls=new Map(buildings.filter(b=>wallLike(b)&&elevation(b)===baseY).map(b=>[edgeKey(b),b]));

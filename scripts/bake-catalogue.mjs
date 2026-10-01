@@ -5,6 +5,8 @@
 // Optional BROWSER_EXECUTABLE and GALLIUM_DRIVER select the local renderer.
 // Builds an immutable temporary bundle. Never visits a running game or its saves.
 import {build} from 'vite';
+import {SEEDS,PIECES,MATERIALS} from '../src/state.js';
+import {DELIGHT_KEYS} from '../src/delights.js';
 import {chromium} from '@playwright/test';
 import {readFile,writeFile,mkdir,mkdtemp,readdir,rm,symlink} from 'node:fs/promises';
 import {createServer} from 'node:http';
@@ -71,7 +73,10 @@ try{
   pictures[key]='assets/catalogue/'+name;await writeFile(join(output,name),bytes);filesInfo.push({key,sha256:hash,...encoded.find(f=>f.stem===stem)});
  }
  report.count=filesInfo.length;report.bytes=filesInfo.reduce((sum,f)=>sum+f.bytes,0);report.files=filesInfo;
- if(report.count!==97)throw Error('Catalogue key count changed; review the manifest contract before accepting it');
+ // 32 resident/outfit portraits, 13 animals and 7 tools; catalogued gameplay kinds are authoritative.
+ const expectedCount=52+Object.keys(SEEDS).length+Object.keys(PIECES).length*MATERIALS.length+DELIGHT_KEYS.length;
+ report.expectedCount=expectedCount;
+ if(report.count!==expectedCount)throw Error('Catalogue key count changed; review the manifest contract before accepting it');
  if(report.bytes>450*1024)throw Error('Lossless catalogue exceeds450KiB budget; retain evidence and review encoding before accepting');
  const manifest={version:1,width:160,height:160,sourceHash,pictures};
  await writeFile(join(root,'src/catalogue-manifest.json'),JSON.stringify(manifest,null,2)+'\n');

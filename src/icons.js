@@ -1,5 +1,6 @@
 // Compact authored pictograms. UI owns accessible labels, sizing and selected state.
 const paths = {
+  water: '<path d="M32 6C26 17 15 28 15 39a17 17 0 0 0 34 0C49 28 38 17 32 6Z" fill="#83cbd4"/><path d="M23 36q-3 9 6 12M7 58q6-5 12 0t12 0t12 0t14 0" fill="none"/>',
   rock: '<path fill="#a5aa9a" d="m7 48 8-23 17-13 19 9 8 27-18 8-25-2z"/><path fill="#c2c2ac" d="m15 25 17-13 9 23-22 6z"/><path d="m41 35 10-14m-10 14 18 13M19 41l-3 13"/>',
   lookDown: '<path d="M5 20Q18 4 31 20Q18 36 5 20Z" fill="#eee0bd"/><circle cx="18" cy="20" r="5" fill="#527c68"/><path d="M46 15v27m-10-9 10 11 10-11M8 56h48" fill="none" stroke-width="4"/>',
   grass: '<path fill="#78a05b" stroke="#426c42" d="M14 56C17 36 9 20 6 15c14 6 19 21 20 41h-12ZM27 56C29 29 25 13 21 6c17 12 16 33 15 50h-9ZM37 56C38 33 47 18 59 14c-9 14-11 30-12 42H37Z"/><path d="M9 57h45" stroke="#806644" stroke-width="4"/>',

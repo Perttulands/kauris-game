@@ -1,3 +1,4 @@
+import {createSeaPlant,animateSeaPlant,SEA_PLANT_PROFILES} from './sea-garden-visuals.js';
 import {terrainHeight} from './terrain.js';
 import * as THREE from 'three';
 import {createCraftPiece,createWateringCan} from './craft-visuals.js';
@@ -72,8 +73,8 @@ function branch(b, mat, a, c, radius) {
   dummy.scale.set(radius, from.distanceTo(to), radius); dummy.updateMatrix();
   b.geometry(geo.cylinder, mat, dummy.matrix);
 }
-export function createTree(kind, options = {}) { return createStagedTree(kind, options); }
-export function animateTree(group, options = {}) { animateStagedTree(group, options); }
+export function createTree(kind, options = {}) { const sea=Object.hasOwn(SEA_PLANT_PROFILES,kind),g=sea?createSeaPlant(kind,options):createStagedTree(kind,options);if(sea)g.userData.seaPlant=true;return g; }
+export function animateTree(group, options = {}) { if(group.userData.seaPlant)animateSeaPlant(group,options);else animateStagedTree(group, options); }
 
 export function createBuildPiece(kind, surface = 'wood') {return createCraftPiece(kind,surface);}
 

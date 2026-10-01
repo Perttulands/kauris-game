@@ -4,7 +4,7 @@ import {freshState,dig,plant,fill,water,tick,harvest,harvestWild,serialize,deser
 import {sampleCell,surfaceAt,chunkAt} from '../src/surface-grid.js';
 import {createWorldRuntime} from '../src/world-runtime.js';
 import {WILD_RESOURCES} from '../src/world-data.js';
-test('remote soil at multiple terraces pays only after the planted loop; rock and water do not mutate',()=>{
+test('remote soil at multiple terraces pays only after the planted loop; rock does not mutate',()=>{
  const s=freshState();assert.equal(s.inventory.wood,0);assert.notEqual(SAVE_KEY,'kauris-meadow-v1');
  for(const [gx,gz] of [[0,3],[-20,0],[30,-20],[35,-15]]){
   const baseY=sampleCell(gx,gz).height;assert.ok(dig(s,gx,gz).ok);assert.equal(surfaceAt(s,gx*2,gz*2).floor,baseY-.6);
@@ -17,7 +17,7 @@ test('remote soil at multiple terraces pays only after the planted loop; rock an
   const before=s.inventory.wood;assert.ok(harvest(s,gx,gz).ok);assert.equal(s.inventory.wood,before+18);
   assert.equal(harvest(s,gx,gz).ok,false);
  }
- for(const kind of ['rock','wet']){
+ for(const kind of ['rock']){
   let c;for(let gz=-100;gz<100&&!c;gz++)for(let gx=-100;gx<100;gx++){const q=sampleCell(gx,gz);if(kind==='rock'?q.substrate==='rock':q.waterY!==null){c=q;break;}}
   const before=serialize(s);assert.equal(dig(s,c.gx,c.gz).ok,false);assert.equal(serialize(s),before);
  }

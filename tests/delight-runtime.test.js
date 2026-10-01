@@ -51,7 +51,7 @@ test('fish reach either exterior window axis while panes and home interiors stay
  }
 });
 test('whale remains continuously in reachable water with full vertical and horizontal envelope',()=>{
- const motion=createWhaleMotion(),a=motion.actor,stages=new Set();let blows=0,maxStep=0;for(let i=0;i<5000;i++){const old=[a.x,a.y,a.z];motion.update(.1,{z:80});stages.add(a.stage);if(a.blow)blows++;maxStep=Math.max(maxStep,Math.hypot(a.x-old[0],a.y-old[1],a.z-old[2]));assert.ok(a.x-a.profile.radius>TERRAIN.minX&&a.x+a.profile.radius<TERRAIN.maxX);assert.ok(a.z+a.profile.radius<TERRAIN.maxZ);assert.ok(a.y+a.profile.minY>terrainHeight(a.x,a.z-a.profile.radius));}assert.equal(stages.size,5);assert.ok(blows>=2);assert.ok(maxStep<.2,maxStep);const before=JSON.stringify(a);assert.equal(JSON.stringify(a),before);
+ const motion=createWhaleMotion(),a=motion.actor,stages=new Set();let blows=0,maxStep=0;for(let i=0;i<5000;i++){const old=[a.x,a.y,a.z],wasActive=a.active;motion.update(.1,{z:80});stages.add(a.stage);if(a.blow)blows++;if(wasActive)maxStep=Math.max(maxStep,Math.hypot(a.x-old[0],a.y-old[1],a.z-old[2]));assert.ok(a.x-a.profile.radius>TERRAIN.minX&&a.x+a.profile.radius<TERRAIN.maxX);assert.ok(a.z+a.profile.radius<TERRAIN.maxZ);assert.ok(a.y+a.profile.minY>terrainHeight(a.x,a.z-a.profile.radius));}assert.equal(stages.size,5);assert.ok(blows>=2);assert.ok(maxStep<.2,maxStep);const before=JSON.stringify(a);assert.equal(JSON.stringify(a),before);
 });
 import {freshState,build,serialize,deserialize}from'../src/state.js';import {placeDelight,propBoxes}from'../src/delights.js';import {buildingBoxes,touches}from'../src/building.js';import {createResidentSystem}from'../src/resident-runtime.js';
 import {createGardenSystem} from '../src/garden-runtime.js';

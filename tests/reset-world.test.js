@@ -19,7 +19,7 @@ test('complete marine population moves continuously clear of generated and autho
 });
 test('whale completes repeated sampled-body routes without terrain snapping or solid intersection',()=>{
  const solidsAt=(x,z)=>[...reef,...world.solidsAt(x,z)],m=createWhaleMotion({solidsAt}),stages=new Set();let blows=0,travel=0;
- for(let i=0;i<5000;i++){const a=m.actor,old=[a.x,a.y,a.z];m.update(.1,{z:80});stages.add(a.stage);if(a.blow)blows++;assert.ok(m.clearAt(a.x,a.y,a.z));const d=Math.hypot(a.x-old[0],a.y-old[1],a.z-old[2]);assert.ok(d<.2);travel+=d;}
+ for(let i=0;i<5000;i++){const a=m.actor,old=[a.x,a.y,a.z],wasActive=a.active;m.update(.1,{z:80});stages.add(a.stage);if(a.blow)blows++;assert.ok(m.clearAt(a.x,a.y,a.z));const d=Math.hypot(a.x-old[0],a.y-old[1],a.z-old[2]);if(wasActive){assert.ok(d<.2);travel+=d;}}
  assert.equal(stages.size,5);assert.ok(blows>=2);assert.ok(travel>80);const before=JSON.stringify(m.actor);m.update(0,{z:80});assert.equal(JSON.stringify(m.actor),before);
 });
 

@@ -1,3 +1,4 @@
+import {plantVolume} from './cultivation.js';
 import {readHome} from './home.js';
 import {activeDiscoveries,seedUnlocked,plantVariation,readGarden} from './garden.js';
 import {reconcileResidents,readResidents} from './residents.js';
@@ -19,12 +20,20 @@ export const SEEDS = {
   diamond: {name:'Diamond', resource:'diamond', yield:10, seconds:28, color:'#8fe5ec'},
   golden: {name:'Golden tree', resource:'wood', yield:24, seconds:24, color:'#e5c85d'},
   starflower: {name:'Star flowers', resource:'fiber', yield:12, seconds:18, color:'#c2b8ec'},
+  kelp: {name:'Kelp', resource:'fiber', yield:8, seconds:18, color:'#6eaa83', aquatic:true},
+  coralPlant: {name:'Copper coral', resource:'copper', yield:14, seconds:22, color:'#df9a83', aquatic:true},
+  pearlPlant: {name:'Pearl plant', resource:'diamond', yield:10, seconds:28, color:'#f1edd8', aquatic:true},
   flowers: {name:'Wildflowers', resource:'fiber', yield:8, seconds:15, color:'#e9a3c1'},
 };
 export const PIECES = {floor:{name:'Floor',cost:2},wall:{name:'Wall',cost:3},window:{name:'Window',cost:3},door:{name:'Doorway',cost:4},roof:{name:'Roof',cost:3}};
 export const MATERIALS = ['wood','copper','iron','diamond','fiber'];
 export const cellKey=(gx,gz)=>`${gx},${gz}`;
-export const validCell=(gx,gz)=>Number.isSafeInteger(gx)&&Number.isSafeInteger(gz)&&Math.abs(gx)<=499999&&Math.abs(gz)<=499999&&sampleCell(gx,gz).substrate==='soil'&&sampleCell(gx,gz).waterY===null;
+export const submergedPlot=p=>Number.isSafeInteger(p?.gx)&&Number.isSafeInteger(p?.gz)&&sampleCell(p.gx,p.gz).waterY!==null;
+export const plotMoisture=p=>p?.phase==='filled'&&submergedPlot(p)?1:p?.water??0;
+export const validCell=(gx,gz)=>{
+ if(!Number.isSafeInteger(gx)||!Number.isSafeInteger(gz)||Math.abs(gx)>499999||Math.abs(gz)>499999)return false;
+ const c=sampleCell(gx,gz);return c.substrate==='soil'||(c.waterY!==null&&c.substrate==='sand');
+};
 const ok=(code,params={},extra={})=>({ok:true,code,params,...extra});
 const no=(code,params={})=>({ok:false,code,params});
 export function freshState(){
@@ -53,8 +62,10 @@ export function harvestWild(s,id){
  const spec=SEEDS[r.kind];s.wildRemoved.push(id);s.inventory[spec.resource]+=spec.yield;s.stats.harvested++;
  return ok('message.yield',{count:spec.yield,material:spec.resource},{resource:spec.resource,amount:spec.yield});
 }
-export function validateDig(s,gx,gz){
+export function validateDig(s,gx,gz,{actors=[]}={}){
  if(!validCell(gx,gz))return no('message.insideMeadow');
+ const cell=sampleCell(gx,gz);
+ if(cell.waterY!==null&&actors.some(a=>Math.abs(a.x-gx*2)<1+a.radius&&Math.abs(a.z-gz*2)<1+a.radius&&a.feet<cell.height+.5&&a.feet+a.height>cell.height-.6))return no('message.creatureRoom');
  if(s.delights?.some(p=>p.gx===gx&&p.gz===gz&&p.hostId===null&&p.baseY===sampleCell(gx,gz).height))return no('message.removeToy');
  if(worldBlocked(s,gx,gz))return no('message.clearWild');
  if(s.buildings.some(b=>!wallLike(b)&&b.gx===gx&&b.gz===gz))return no('message.removeBuilding');
@@ -64,23 +75,33 @@ export function validateDig(s,gx,gz){
  if(p?.phase==='hole'&&!p.seed)return no('message.holeReady');
  return ok('message.dug');
 }
-export function dig(s,gx,gz){
- const check=validateDig(s,gx,gz);if(!check.ok)return check;
+export function dig(s,gx,gz,options){
+ const check=validateDig(s,gx,gz,options);if(!check.ok)return check;
  s.plots[cellKey(gx,gz)]={gx,gz,baseY:sampleCell(gx,gz).height,phase:'hole',seed:null,growth:0,water:0};return check;
 }
-export function plant(s,gx,gz,seed){
+export function validatePlant(s,gx,gz,seed){
  const p=s.plots[cellKey(gx,gz)];
  if(!Object.hasOwn(SEEDS,seed))return no('message.chooseSeed');
  if(!seedUnlocked(s,seed))return no('message.discoverSeed');
  if(!p||p.phase!=='hole')return no('message.shovelFirst');
  if(p.seed)return no('message.seedAlready');
+ if(SEEDS[seed].aquatic&&!submergedPlot(p))return no('message.seaSeedWater');
+ if(submergedPlot(p)){
+  const future=plantVolume({...p,seed},{reserve:true});
+  if([...s.buildings.flatMap(buildingBoxes),...s.delights.flatMap(q=>propBoxes(q))].some(b=>boxesOverlap(future,b,.001)))return no('message.clearGround');
+ }
+ return ok('message.sown');
+}
+export function plant(s,gx,gz,seed){
+ const check=validatePlant(s,gx,gz,seed);if(!check.ok)return check;
+ const p=s.plots[cellKey(gx,gz)];
  p.seed=seed;p.variation=plantVariation(gx,gz,seed,s.stats.planted);s.stats.planted++;return ok('message.sown');
 }
 export function fill(s,gx,gz){
  const k=cellKey(gx,gz),p=s.plots[k];
  if(!p||p.phase!=='hole')return no('message.openHole');
  if(!p.seed){delete s.plots[k];return ok('message.holeFilled');}
- p.phase='filled';return ok('message.covered');
+ p.phase='filled';const submerged=submergedPlot(p);if(submerged)p.water=1;return ok(submerged?'message.coveredUnderwater':'message.covered');
 }
 export function water(s,gx,gz,dt){
  const p=s.plots[cellKey(gx,gz)];
@@ -88,9 +109,10 @@ export function water(s,gx,gz,dt){
  p.water=Math.min(1,p.water+Math.max(0,Math.min(dt,0.1))*.7);return ok('message.watering');
 }
 export function tick(s,dt){
- dt=Math.max(0,Math.min(dt,.1));
- for(const p of Object.values(s.plots))if(p.phase==='filled'&&p.seed&&p.growth<1&&p.water>0){
-  p.growth=Math.min(1,p.growth+dt/SEEDS[p.seed].seconds);p.water=Math.max(0,p.water-dt*.025);
+ dt=Math.max(0,Math.min(dt,.1));if(dt===0)return;
+ for(const p of Object.values(s.plots))if(p.phase==='filled'&&p.seed){
+  const wet=submergedPlot(p);if(wet)p.water=1;
+  if(p.growth<1&&p.water>0){p.growth=Math.min(1,p.growth+dt/SEEDS[p.seed].seconds);if(!wet)p.water=Math.max(0,p.water-dt*.025);}
  }
 }
 export function harvest(s,gx,gz){
@@ -139,6 +161,7 @@ export function deserialize(raw){
  const plots=Object.entries(d.plots);if(plots.length>729)throw Error('Too many plots');
  for(const [key,p] of plots){
   if(!p||!validCell(p.gx,p.gz)||p.baseY!==sampleCell(p.gx,p.gz).height||key!==cellKey(p.gx,p.gz)||!['hole','filled'].includes(p.phase)||!(p.seed===null||Object.hasOwn(SEEDS,p.seed))||!Number.isFinite(p.growth)||p.growth<0||p.growth>1||!Number.isFinite(p.water)||p.water<0||p.water>1||(p.phase==='hole'&&(p.growth!==0||p.water!==0))||(p.phase==='filled'&&!p.seed))throw Error('Invalid plot');
+  if(p.seed&&SEEDS[p.seed].aquatic&&!submergedPlot(p))throw Error('Sea seed needs water');
   if(p.variation!==undefined&&(!Number.isInteger(p.variation)||p.variation<0||p.variation>9))throw Error('Invalid plant variation');
   s.plots[key]={gx:p.gx,gz:p.gz,baseY:p.baseY,phase:p.phase,seed:p.seed,growth:p.growth,water:p.water};if(p.seed)s.plots[key].variation=p.variation??plantVariation(p.gx,p.gz,p.seed);
  }

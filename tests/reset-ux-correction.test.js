@@ -15,3 +15,25 @@ test('unfinished paid home protects its interior without reserving the exterior 
  fish.z=46;assert.equal(life.overlapsBuilding(north),true,'unfinished interior remains protected');assert.equal(life.clearAt(fish,fish.x,fish.y,fish.z,false),false);
  fish.y=3;assert.equal(life.overlapsBuilding(north),false,'vertically separate actor does not veto');
 });
+
+test('object-use target suppresses unrelated shovel and seed refusal while ground keeps guidance',()=>{
+ const main=fs.readFileSync(new URL('../src/main.js',import.meta.url),'utf8'),start=main.indexOf(' if(locked&&[0,1].includes(tool)){'),end=main.indexOf(' const p=target&&!target.outOfReach&&state.plots',start),code=main.slice(start,end);
+ for(const tool of [0,1])for(const target of [{propId:1,gx:-5,gz:22,outOfReach:false},{gx:-5,gz:22,outOfReach:false},{gx:-5,gz:22,outOfReach:true}]){
+  let calls=0;const nodes={targetLabel:{textContent:'stale ground refusal'},targetCue:{innerHTML:'stale cue',hidden:false}},check=()=>{calls++;return {ok:false,code:'message.removeToy'};};
+  vm.runInNewContext(code,{locked:true,tool,target,state:{},seedKeys:['kelp'],seedIndex:0,validateDig:check,plantingResult:check,diggingActors:()=>[],t:key=>LOCALES.en[key],icon:key=>key,$:id=>nodes[id]});
+  const ground=!target.propId&&!target.outOfReach;assert.equal(calls,ground?1:0);assert.equal(nodes.targetLabel.textContent,ground?LOCALES.en['message.removeToy']:'');assert.equal(nodes.targetCue.innerHTML,'');assert.equal(nodes.targetCue.hidden,true);
+ }
+});
+
+test('far placement preview matches action reach before paid validity and connected success',()=>{
+ const main=fs.readFileSync(new URL('../src/main.js',import.meta.url),'utf8'),helper=main.slice(main.indexOf('function placementPreviewResult('),main.indexOf('function placementResult(')),detail=main.slice(main.indexOf('function renderSelectionDetail('),main.indexOf('function toast('));
+ const ghost=main.slice(main.indexOf(' const valid=check.ok;'),main.indexOf(' if(connectionGhost){connectionGhost.visible'));
+ for(const far of [false,true])for(const paidOk of [false,true]){
+  let paidCalls=0,color;const nodes={selectedDetail:{textContent:''},selection:{dataset:{}}},candidate={kind:'pump',baseY:0,level:0},scope={target:{outOfReach:far},state:{plots:{}},camera:{position:{y:1.7}},farTargetHint:()=> 'target.closer',placementResult:()=>{paidCalls++;return {ok:paidOk,code:paidOk?'message.place':'message.needMaterial',params:{count:8,material:'copper'}};}};
+  vm.runInNewContext(helper+';this.check=placementPreviewResult({});',scope);assert.equal(paidCalls,far?0:1);assert.equal(scope.check.ok,!far&&paidOk);if(far)assert.equal(scope.check.code,'target.closer');
+  Object.assign(scope,{locked:true,lastFailure:null,elapsed:0,tool:5,placementQuery:{candidate,validation:scope.check,connection:'water.connected'},i18n:{message:r=>LOCALES.en[r.code]},t:key=>LOCALES.en[key],DELIGHTS:{pump:{cost:8,material:'copper'}},PIECES:{},pieceKeys:['pump'],pieceIndex:0,isToy:()=>true,MATERIALS:['copper'],materialIndex:0,selectionDetail:'',b:candidate,baseOf:b=>b.baseY,tileOutline:{position:{}},preview:{traverse:fn=>fn({isMesh:true,material:{color:{set:c=>color=c}}})},$:id=>nodes[id]});
+  vm.runInNewContext(detail+';renderSelectionDetail();'+ghost.trim().replace(/}}$/,''),scope);
+  assert.equal(color,scope.check.ok?'#d8f5a5':'#f49471');assert.equal(nodes.selectedDetail.textContent.includes(LOCALES.en['water.connected']),scope.check.ok);if(far)assert.equal(nodes.selectedDetail.textContent,LOCALES.en['target.closer']);
+ }
+ assert.ok(main.includes('const check=placementPreviewResult(b);placementQuery='));assert.ok(main.includes("if(!target||target.outOfReach){failure({code:target?farTargetHint("),'action reach gate unchanged');
+});

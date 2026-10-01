@@ -1,3 +1,5 @@
+import {plantVolume} from './cultivation.js';
+import {NEW_WATER_TOYS,ADDON_BOXES,pumpIntake,waterPoint} from './water-spec.js';
 // Authoritative paid toy definitions, anchors and physical rules. No renderer/state cycle.
 import {TERRAIN,terrainHeight,buildBase,inWorld} from './terrain.js';
 import {buildingBoxes,baseOf,touches} from './building.js';
@@ -7,6 +9,7 @@ const box=(minX,maxX,minY,maxY,minZ,maxZ)=>({minX,maxX,minY,maxY,minZ,maxZ});
 const post=(x,z,height,width=.1)=>box(x-width/2,x+width/2,0,height,z-width/2,z+width/2);
 const freeze=o=>{for(const v of Object.values(o))if(v&&typeof v==='object')freeze(v);return Object.freeze(o);};
 export const DELIGHTS=freeze({
+ ...NEW_WATER_TOYS,
  birdhouse:{material:'wood',cost:6,size:[.55,1.65,1.16],boxes:[post(0,0,1.3,.12),box(-.28,.28,1.0,1.65,-.28,.28)],anchors:{perch:[0,.97,.55],use:[0,1.2,.4]}},
  crabShelter:{material:'wood',cost:4,size:[1.88,.78,1.76],boxes:[box(-.94,-.82,0,.72,-.88,.88),box(.82,.94,0,.72,-.88,.88),box(-.82,.82,0,.72,-.88,-.76),box(-.94,.94,.60,.78,-.88,.88)],anchors:{entry:[0,0,1.7],inside:[0,0,0],shell:[.55,.02,1.08],use:[0,.4,1]}},
  gutter:{material:'copper',cost:4,size:[1.8,1.25,.9],boxes:[post(-.65,0,.8),post(.65,0,.8),box(-.9,.9,.65,.85,-.4,.4)],anchors:{pour:[0,1.05,0],outlet:[.9,.72,0],use:[0,.9,.55]}},
@@ -26,8 +29,8 @@ function worldBox(p,b){const corners=[[b.minX,b.minZ],[b.minX,b.maxZ],[b.maxX,b.
 export function propBoxes(p,{reserve=false,envelope=false,liftY=p.liftY??0}={}){
  const spec=DELIGHTS[p.kind];if(!spec)return [];
  if(reserve)return [worldBox(p,box(-.98,.98,0,spec.size[1],-.98,.98))];
- if(envelope)return [worldBox(p,box(-spec.size[0]/2,spec.size[0]/2,0,spec.size[1],-spec.size[2]/2,spec.size[2]/2))];
- const parts=[...spec.boxes];if(p.kind==='lift')parts.push({...spec.platform,minY:spec.platform.minY+liftY,maxY:spec.platform.maxY+liftY});return parts.map(b=>worldBox(p,b));
+ if(envelope)return [worldBox(p,box(-spec.size[0]/2,spec.size[0]/2,0,spec.size[1],-spec.size[2]/2,spec.size[2]/2)),...[...ADDON_BOXES[p.kind]??[],...p.kind==='pump'?pumpIntake(p).boxes:[]].map(b=>worldBox(p,b))];
+ const parts=[...spec.boxes,...ADDON_BOXES[p.kind]??[],...p.kind==='pump'?pumpIntake(p).boxes:[]];if(p.kind==='lift')parts.push({...spec.platform,minY:spec.platform.minY+liftY,maxY:spec.platform.maxY+liftY});return parts.map(b=>worldBox(p,b));
 }
 export const boxesOverlap=(a,b,margin=0)=>a.minX<b.maxX-margin&&a.maxX>b.minX+margin&&a.minZ<b.maxZ-margin&&a.maxZ>b.minZ+margin&&a.minY<b.maxY-margin&&a.maxY>b.minY+margin;
 export function naturalPropBase(kind,gx,gz){
@@ -48,6 +51,7 @@ export function validateDelight(s,p,{legacy=false}={}){
  const spec=Object.hasOwn(DELIGHTS,p?.kind)?DELIGHTS[p.kind]:null;if(!spec||!Number.isInteger(p.gx)||!Number.isInteger(p.gz)||!Number.isInteger(p.rotation)||p.rotation<0||p.rotation>3||!Number.isFinite(p.baseY)||!inWorld(p.gx*2-1,p.gz*2-1)||!inWorld(p.gx*2+1,p.gz*2+1))return no('message.invalidToy');
  if((s.delights?.length??0)>=80)return no('message.toyLimit');
  if(propSupport(s,p.kind,p.gx,p.gz,p.hostId??null)!==p.baseY)return no('message.toySupport');
+ if(p.kind==='pump'){const source=pumpIntake(p);if(!source.ok)return no(source.code);}
  if(p.kind==='birdhouse'&&p.baseY<TERRAIN.waterY)return no('message.birdDry');
  // A shelter needs actual shallow seabed, independent of authored place names.
  if(p.kind==='crabShelter'&&!(p.hostId==null&&p.baseY<TERRAIN.waterY&&p.baseY>=TERRAIN.waterY-3))return no('message.crabShore');
@@ -55,6 +59,18 @@ export function validateDelight(s,p,{legacy=false}={}){
  if(p.hostId==null&&s.plots?.[`${p.gx},${p.gz}`])return no('message.clearGround');
  const volume=propBoxes(p,{reserve:true});
  if((s.delights??[]).some(other=>volume.some(a=>propBoxes(other,{reserve:true}).some(b=>boxesOverlap(a,b)))))return no('message.occupied');
+ if(!legacy&&(s.delights??[]).some(other=>propBoxes(p).some(a=>propBoxes(other).some(b=>boxesOverlap(a,b,.001)))))return no('message.toyClearance');
+ if(p.kind==='pump'){
+  const source=pumpIntake(p),pipe=source.boxes.map(b=>worldBox(p,b));
+  const terrain=localSolidBounds(p.gx*2,p.gz*2,5).map(b=>({...b,minY:Math.min(...b.vertices.filter((_,i)=>i%3===1)),maxY:Math.max(...b.vertices.filter((_,i)=>i%3===1))}));
+  const obstacles=[...s.buildings.flatMap(buildingBoxes),...(s.delights??[]).flatMap(q=>propBoxes(q)),...terrain,...Object.values(s.plots??{}).map(p=>plantVolume(p,{reserve:true})).filter(Boolean)];
+  if(pipe.some(a=>obstacles.some(b=>boxesOverlap(a,b,.001))))return no('message.pumpBlocked');
+  const points=[[0,1.1,-.6],source.intake.elbow,source.intake.mouth];
+  for(let j=1;j<points.length;j++)for(let i=0;i<=40;i++){
+   const u=i/40,a=points[j-1],b=points[j],v=waterPoint(p,a.map((x,k)=>x+(b[k]-x)*u));
+   if(v.y-.1<terrainHeight(v.x,v.z)-.001)return no('message.pumpBlocked');
+  }
+ }
  for(const b of s.buildings){if(b.id===p.hostId)continue;if(propBoxes(p,{envelope:true}).some(a=>buildingBoxes(b).some(c=>boxesOverlap(a,c,.001))))return no('message.toyClearance');}
  if(s.inventory[spec.material]<spec.cost)return result(false,'message.needMaterial',{count:spec.cost,material:spec.material});
  return result(true,'message.place');

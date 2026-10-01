@@ -1,3 +1,6 @@
+import {createWaterToy,createWaterToyAddon,animateWaterToy} from './water-toy-visuals.js';
+import {NEW_WATER_TOYS,WATER_PORTS} from './water-spec.js';
+const waterAttachments=new WeakMap();
 import * as THREE from 'three';
 import {mergeGeometries} from 'three/addons/utils/BufferGeometryUtils.js';
 import {clone as cloneRig} from 'three/addons/utils/SkeletonUtils.js';
@@ -149,10 +152,19 @@ function authored(kind){
  for(const [name,position]of Object.entries(spec.anchors))if(!root.getObjectByName('anchor:'+name))anchor(root,name,position);
  return root;
 }
-export function createDelight(kind){
- if(!templates.has(kind))templates.set(kind,authored(kind));const root=cloneRig(templates.get(kind)),nodes=new Map();root.traverse(n=>{if(n.name)nodes.set(n.name,n);});rigs.set(root,{kind,nodes});animateDelight(root);return root;
+// Factory templates are keyed by spec identity; retain one immutable merged spec per kind.
+const waterSpecs=Object.freeze(Object.fromEntries(Object.entries(DELIGHTS).map(([kind,base])=>[kind,Object.freeze({...base,anchors:Object.freeze({...base.anchors,...WATER_PORTS[kind]??{}})})])));
+export function createDelight(kind,{intake=undefined}={}){
+ const spec=waterSpecs[kind]??null;
+ if(NEW_WATER_TOYS[kind]){
+  const g=createWaterToy(kind,{spec,intake:kind==='pump'?(intake===undefined?{mouth:[0,.2,-2],elbow:[0,1.1,-2]}:intake):null});
+  g.userData.delightKind=kind;waterAttachments.set(g,g);return g;
+ }
+
+ if(!templates.has(kind))templates.set(kind,authored(kind));const root=cloneRig(templates.get(kind)),nodes=new Map();root.traverse(n=>{if(n.name)nodes.set(n.name,n);});rigs.set(root,{kind,nodes});if(WATER_PORTS[kind]){const addon=createWaterToyAddon(kind,{spec});root.add(addon);waterAttachments.set(root,addon);}animateDelight(root);return root;
 }
-export function animateDelight(group,{time=0,flow=0,phase=0,active=0,swing=0,lift=0,glow=0}={}){
+export function animateDelight(group,{time=0,flow=0,phase=0,active=0,swing=0,lift=0,glow=0,on=false,powered=false}={}){
+ const water=waterAttachments.get(group);if(water)animateWaterToy(water,{time,flow,phase,on,powered,lift});
  const r=rigs.get(group);if(!r)return;const n=r.nodes;flow=clamp(flow,0,1);active=clamp(active,0,1);glow=clamp(glow,0,1);swing=clamp(swing,-1,1);
  if(n.has('water')){n.get('water').visible=flow>.005;n.get('water').position.y=Math.sin(time*5)*.002*flow;}
  if(n.has('pour-stream')){n.get('pour-stream').visible=active>.005;n.get('pour-stream').scale.x=n.get('pour-stream').scale.z=.7+.3*active;}
@@ -164,4 +176,10 @@ export function animateDelight(group,{time=0,flow=0,phase=0,active=0,swing=0,lif
  if(n.has('curtain:middle')){n.get('curtain:middle').rotation.x=Math.sin(time*1.2)*.075+swing*.05;n.get('curtain:hem').rotation.x=Math.sin(time*1.2-.8)*.08;}
  if(n.has('hammock:seat')){n.get('hammock:seat').position.z=swing*.16;n.get('hammock:seat').position.y=DELIGHTS.hammock.anchors.seat[1]+swing*swing*.035;n.get('hammock:seat').rotation.x=swing*.10;}
  if(n.has('windsock:middle')){n.get('windsock:middle').rotation.y=Math.sin(time*1.7)*.10+swing*.06;n.get('windsock:tail').rotation.y=Math.sin(time*1.7-.8)*.13;n.get('windsock:tail').rotation.x=Math.sin(time*1.5)*.05;}
+}
+
+export function disposeDelight(group){
+ const skeletons=new Set(),privateGeometry=new Set();
+ group.traverse(o=>{if(o.isSkinnedMesh)skeletons.add(o.skeleton);if(o.isMesh&&(o.userData.privateGeometry||o.geometry.userData.privateResources))privateGeometry.add(o.geometry);});
+ for(const s of skeletons)s.dispose();for(const g of privateGeometry)g.dispose();
 }

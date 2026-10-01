@@ -1,3 +1,7 @@
+import {createWaterFlow} from './water-flow.js';
+import {WATER_PORTS,pumpIntake} from './water-spec.js';
+import {describeWaterNetwork,waterPorts} from './water-connections.js';
+import {plantVolume,submergedPlantSolids} from './cultivation.js';
 import {createAudio} from './audio.js';
 import {createWaterAudio,createMovementAudio,stepSurface} from './audio-cues.js';
 import {createPlacedPiece,updateFoundation} from './building-visuals.js';
@@ -14,7 +18,7 @@ function measureBoot(name,run){const start=performance.now();try{return run();}f
 const yieldBoot=async()=>{if(globalThis.scheduler?.yield)await globalThis.scheduler.yield();else await new Promise(resolve=>setTimeout(resolve,0));};
 await yieldBoot();
 import {createLandmarks,createTree,animateTree,createBuildPiece,createTool} from './visuals.js';
-import {SAVE_KEY,SEEDS,PIECES,MATERIALS,cellKey,freshState,validateDig,dig,plant,fill,water,tick,harvest,validateBuild,build,validateRemove,remove,serialize,deserialize} from './state.js';
+import {SAVE_KEY,SEEDS,PIECES,MATERIALS,cellKey,freshState,validateDig,validatePlant,plotMoisture,submergedPlot,dig,plant,fill,water,tick,harvest,validateBuild,build,validateRemove,remove,serialize,deserialize} from './state.js';
 import {WILD_RESOURCES,PLACES,nearbyResources,resourceRecord} from './world-data.js';
 import {liveWild,activeObstacles,harvestWild,worldBlocked} from './state.js';
 import {advanceChop,wheelStep,farTargetHint} from './interaction.js';
@@ -40,7 +44,7 @@ import {createWhaleSystem} from './whale.js';
 import {createMarineLife} from './marine.js';
 import {DELIGHTS,DELIGHT_KEYS,propBoxes,propFloor,propSupport,propAnchor,rotateXZ,placeDelight,validateRemoveDelight,removeDelight,validateDelight,boxesOverlap,liftRiders} from './delights.js';
 import {createDelightSystem} from './delight-runtime.js';
-import {createDelight} from './delight-visuals.js';
+import {createDelight,disposeDelight} from './delight-visuals.js';
 import {animateCraftPiece} from './craft-visuals.js';
 import {createI18n,LANGUAGES} from './i18n.js';
 import {nearestReading,createReadingFocus,assistedReading} from './reading.js';
@@ -72,10 +76,10 @@ await yieldBoot();
 const world=measureBoot('landmarks',()=>createLandmarks({occupiedCells:[...Object.values(state.plots),...state.buildings,...activeDiscoveries(state).flatMap(d=>{const cells=[];for(let gx=Math.floor(d.bounds.minX/2);gx<=Math.ceil(d.bounds.maxX/2);gx++)for(let gz=Math.floor(d.bounds.minZ/2);gz<=Math.ceil(d.bounds.maxZ/2);gz++)cells.push({gx,gz});return cells;})],hiddenLandmarks:state.worldHidden}));scene.add(world.group);
 await yieldBoot();
 const ocean=measureBoot('ocean',()=>createOceanWorld({terrain:TERRAIN,heightAt:terrainHeight}));scene.add(ocean);const reefSolids=ocean.userData.reefSolids,oceanBounds=new THREE.Box3().setFromObject(ocean);
-const worldRuntime=createWorldRuntime(state);scene.add(worldRuntime.group);const outerLife=createOuterLife({scene,state,solidsAt:(x,z)=>worldRuntime.solidsAt(x,z)});
+const worldRuntime=createWorldRuntime(state);scene.add(worldRuntime.group);const outerLife=createOuterLife({scene,state,solidsAt:(x,z)=>[...worldRuntime.solidsAt(x,z),...submergedPlantSolids(state,x,z)]});
 await yieldBoot();
 const seaLight=new THREE.HemisphereLight('#b5eee5','#27616a',.65);seaLight.position.set(0,0,52);scene.add(seaLight);
-const marineLife=createMarineLife({profiles:MARINE_PROFILES,reefSolids,buildings:state.buildings,solidsAt:(x,z)=>worldRuntime.solidsAt(x,z)});
+const marineLife=createMarineLife({profiles:MARINE_PROFILES,reefSolids,buildings:state.buildings,solidsAt:(x,z)=>[...worldRuntime.solidsAt(x,z),...submergedPlantSolids(state,x,z)]});
 await yieldBoot();
 const marine=marineLife.animals.map(actor=>{const model=createMarineAnimal(actor.kind,actor.variant);model.rotation.order='YXZ';scene.add(model);return {actor,model};});
 function poseMarine(dt=0){for(const {actor:a,model} of marine){model.position.set(a.x,a.y,a.z);model.rotation.set(a.pitch,a.yaw,a.roll,'YXZ');animateMarineAnimal(model,{time:marineLife.time,dt,speed:a.speed,turn:a.turn,activity:a.activity,phase:a.phase});model.updateMatrixWorld(true);}}
@@ -94,7 +98,7 @@ const tools=[{key:'shovel',name:'Dig',icon:'♧'},{key:'seed',name:'Seeds',icon:
 let fallbackLook=false,rightDrag=false,runtimeReady=false,pendingStart=false;
 let homeStatusKey='',homeStatusTimer;
 let frameHandle=0,previous=null,qualityWarmUntil=0,homeHeld=0,homeAnchor=null,cueNeed=null,cueNeedKey='',cueNeedUntil=0,placementQuery=null,houseInfoKey='',houseInfo=null;
-let tool=0,seedIndex=0,pieceIndex=0,materialIndex=0,rotation=0,level=0,levelExplicit=false,toolMesh,preview,connectionGhost;
+let tool=0,seedIndex=0,pieceIndex=0,materialIndex=0,rotation=0,level=0,levelExplicit=false,toolMesh,preview,connectionGhost,previewPumpKey='',connectionPreviewKey='',connectionPreview=null;
 const seedKeys=Object.keys(SEEDS),pieceKeys=[...Object.keys(PIECES),...DELIGHT_KEYS];
 const isToy=()=>Object.hasOwn(DELIGHTS,pieceKeys[pieceIndex]);
 let yaw=state.player.yaw,pitch=state.player.pitch,feet=reefSafeFeet(reefSolids,state.player.x,state.player.z,state.player.y??0),vy=0,locked=false,held=false,catalogOpen=false,menuMode='build',started=false,dirty=false,lastSave=0,elapsed=0,target=null,swing=0,toastUntil=0;
@@ -103,13 +107,13 @@ feet=Math.max(feet,surfaceAt(state,pos.x,pos.z).floor);
 const waterPositions=new Float32Array(28*3),waterGeometry=new THREE.BufferGeometry();waterGeometry.setAttribute('position',new THREE.BufferAttribute(waterPositions,3));
 const dropCanvas=document.createElement('canvas');dropCanvas.width=dropCanvas.height=32;const dc=dropCanvas.getContext('2d'),dg=dc.createRadialGradient(16,16,1,16,16,15);dg.addColorStop(0,'#ffffff');dg.addColorStop(.45,'#ffffffdd');dg.addColorStop(1,'#ffffff00');dc.fillStyle=dg;dc.fillRect(0,0,32,32);
 const stream=new THREE.Points(waterGeometry,new THREE.PointsMaterial({color:'#c5faff',size:.024,map:new THREE.CanvasTexture(dropCanvas),transparent:true,opacity:.85,depthWrite:false}));stream.frustumCulled=false;stream.visible=false;scene.add(stream);
-const sparks=[],falling=[];const audio=createAudio(),waterAudio=createWaterAudio(),movementAudio=createMovementAudio((kind,options)=>audio.play(kind,options));const whale=createWhaleSystem({scene,solidsAt:(x,z)=>physicalSolids(x,z),event:(kind,p)=>audio.play(kind,{...p,sourceId:'whale:0'})});let garden;let outfitResident=null;let nearestFriend=null;
+const sparks=[],falling=[];const audio=createAudio(),waterAudio=createWaterAudio(),movementAudio=createMovementAudio((kind,options)=>audio.play(kind,options));const whale=createWhaleSystem({scene,paidSolids:()=>[...state.buildings.flatMap(boxes),...state.delights.flatMap(p=>propBoxes(p)),...Object.values(state.plots).filter(p=>p.seed&&submergedPlot(p)).map(p=>plantVolume(p,{reserve:true}))],solidsAt:(x,z)=>physicalSolids(x,z),event:(kind,p)=>audio.play(kind,{...p,sourceId:'whale:0'})});let garden;let outfitResident=null;let nearestFriend=null;
 let residents,delights,pourWeight=0,swimHudMode=null,nextBirdCall=15;
 const chop={},wheel={};let chopProgress=0,totalImpacts=0,rewardUntil=0,lastCue="",timedEcho=null,selectionDetail="",lastFailure=null;const failureMemory={};
 function resetActions(){movementAudio.reset();audio.setContinuous('player:water','water',{active:false});held=false;advanceChop(chop,null,0);chopProgress=0;wheelStep(wheel,0,0,0,false);}
 let lastReward=null,lastToast=null,saveStatusKey='ui.saved';
 function failure(result){const key=target?(target.propId??target.buildId??target.wildId??cellKey(target.gx,target.gz)):'none';if(!admitFailure(failureMemory,result.code,key,elapsed))return;lastFailure={result,until:elapsed+2.5};renderSelectionDetail();}
-function renderSelectionDetail(){const failed=locked&&lastFailure&&elapsed<lastFailure.until,text=failed?i18n.message(lastFailure.result):locked&&tool===5&&placementQuery&&!placementQuery.validation.ok?i18n.message(placementQuery.validation):locked&&tool===5&&placementQuery?t('ui.buildCost',{count:(DELIGHTS[pieceKeys[pieceIndex]]??PIECES[pieceKeys[pieceIndex]]).cost,material:t('material.'+(isToy()?DELIGHTS[pieceKeys[pieceIndex]].material:MATERIALS[materialIndex])),level:placementQuery.candidate.level??0}):selectionDetail;if($('selectedDetail').textContent!==text)$('selectedDetail').textContent=text;$('selection').dataset.failure=String(!!failed);}
+function renderSelectionDetail(){const failed=locked&&lastFailure&&elapsed<lastFailure.until,text=failed?i18n.message(lastFailure.result):locked&&tool===5&&placementQuery&&!placementQuery.validation.ok?i18n.message(placementQuery.validation):locked&&tool===5&&placementQuery?t('ui.buildCost',{count:(DELIGHTS[pieceKeys[pieceIndex]]??PIECES[pieceKeys[pieceIndex]]).cost,material:t('material.'+(isToy()?DELIGHTS[pieceKeys[pieceIndex]].material:MATERIALS[materialIndex])),level:placementQuery.candidate.level??0}):locked&&tool<5&&target?.propId?toyHint(state.delights.find(p=>p.id===target.propId))||selectionDetail:selectionDetail;const detail=text+(locked&&tool===5&&placementQuery?.validation.ok&&placementQuery.connection?' · '+t(placementQuery.connection):'');if($('selectedDetail').textContent!==detail)$('selectedDetail').textContent=detail;$('selection').dataset.failure=String(!!failed);}
 function toast(code,params={}){if(typeof code==='object'&&code.ok===false){failure(code);return;}lastToast=typeof code==='object'?code:{code,params};$('toast').textContent=i18n.message(lastToast);toastUntil=elapsed+2.5;$('toast').classList.add('show');}
 function saveStatus(key){saveStatusKey=key;$('saveStatus').textContent=t(key);$('saveStatus').dataset.warning=String(['ui.saveUnavailable','ui.loadFailed'].includes(key));}
 function save(){
@@ -127,7 +131,7 @@ function sync(){
  for(const [k,g] of plantMeshes)if(!state.plots[k]?.seed){scene.remove(g);plantMeshes.delete(k);}
  plotsGroup.clear();
  for(const [k,p] of Object.entries(state.plots)){
-  plotsGroup.add(...plotSurfaces(p,state.plots,{wallGeometry:holeWallGeometry,wallMaterial:dirtMaterial,soilGeometry:plotGeometry,soilMaterial:p.water>0?readable.soilMaterials.wet:plotMaterial}));
+  plotsGroup.add(...plotSurfaces(p,state.plots,{wallGeometry:holeWallGeometry,wallMaterial:dirtMaterial,soilGeometry:plotGeometry,soilMaterial:plotMoisture(p)>0?readable.soilMaterials.wet:plotMaterial}));
   if(p.seed&&!plantMeshes.has(k)){const tree=measureBoot('plant:'+p.seed,()=>createTree(p.seed,{variation:p.variation??0}));tree.userData.perchHeight=new THREE.Box3().setFromObject(tree).max.y-.15;tree.position.set(p.gx*2,p.baseY+(p.phase==='hole'?-.5:0),p.gz*2);tree.userData.plot=k;tree.traverse(o=>{if(o.isMesh)o.userData.plot=k;});scene.add(tree);plantMeshes.set(k,tree);}
   const tree=plantMeshes.get(k);if(tree)tree.position.y=p.baseY+(p.phase==='hole'?-.5:0);
  }
@@ -159,7 +163,7 @@ function canWalk(x,z){
  if(!inWorld(x,z)||surfaceAt(state,x,z).floor>feet+.31||reefBlocked(physicalSolids(x,z),x,z,feet))return false;
  for(const p of state.delights)for(const a of propBoxes(p))if(touches(a,x,z)&&a.maxY>feet+.31&&a.minY<feet+1.65)return false;
  for(const b of state.buildings)for(const a of boxes(b))if(touches(a,x,z)&&a.maxY>feet+.31&&a.minY<feet+1.65)return false;
- for(const p of Object.values(state.plots))if(p.growth>.3&&!isFlower(p.seed)&&Math.hypot(x-p.gx*2,z-p.gz*2)<.24+.2*p.growth)return false;
+ for(const p of Object.values(state.plots)){const b=plantVolume(p);if(b&&touches(b,x,z,.24)&&b.maxY>feet+.31&&b.minY<feet+1.65)return false;}
  for(const r of nearbyResources(state,x,z,2))if(!isFlower(r.kind)&&Math.hypot(x-r.gx*2,z-r.gz*2)<.6)return false;
  for(const a of [...world.colliders??[],...activeDiscoveries(state).flatMap(d=>d.solids)])if(touches(a,x,z)&&feet<a.height)return false;
  return true;
@@ -171,7 +175,7 @@ function residentCanStand(x,z,baseY=0){
  const floor=state.buildings.some(b=>b.kind==='floor'&&elevation(b)===baseY&&Math.abs(x-b.gx*2)<1&&Math.abs(z-b.gz*2)<1);
  if(!floor&&state.plots[cellKey(Math.round(x/2),Math.round(z/2))]?.phase==='hole')return false;
  for(const b of state.buildings)for(const a of boxes(b))if(touches(a,x,z,.31)&&a.maxY>baseY+.3&&a.minY<baseY+1.7)return false;
- for(const p of Object.values(state.plots))if(p.growth>.3&&!isFlower(p.seed)&&Math.hypot(x-p.gx*2,z-p.gz*2)<.31+.2*p.growth)return false;
+ for(const p of Object.values(state.plots)){const b=plantVolume(p);if(b&&touches(b,x,z,.31)&&b.maxY>baseY+.3&&b.minY<baseY+1.7)return false;}
  for(const r of nearbyResources(state,x,z,2))if(!isFlower(r.kind)&&Math.hypot(x-r.gx*2,z-r.gz*2)<.67)return false;
  for(const a of [...world.colliders??[],...activeDiscoveries(state).flatMap(d=>d.solids)])if(touches(a,x,z,.31))return false;
  return true;
@@ -180,7 +184,16 @@ function residentFloor(x,z,baseY=0){return state.buildings.some(b=>b.kind==='flo
 function floorAt(x,z){let f=surfaceAt(state,x,z).floor;
  for(const b of state.buildings)if(b.kind==='floor'||b.kind==='roof')for(const a of boxes(b))if(touches(a,x,z,.1)&&a.maxY<=feet+.31)f=Math.max(f,a.maxY);return propFloor(state.delights,x,z,feet,reefFloor(physicalSolids(x,z),x,z,feet,f));}
 function placeTool(){if(toolMesh)toolMesh.position.set(Math.min(.43,Math.tan(camera.fov*Math.PI/360)*.72*camera.aspect*(camera.aspect<1?.4:.76)),camera.aspect<1?-.31:-.42,-.72);}
-function chooseTool(i){if(connectionGhost){scene.remove(connectionGhost);connectionGhost.traverse(o=>{if(o.isMesh)o.material.dispose();});connectionGhost=null;}resetActions();timedEcho=null;lastFailure=null;tool=i;swing=0;if(toolMesh)camera.remove(toolMesh);toolMesh=createTool(tools[i].key);toolMesh.scale.setScalar(i===3?.38:.55);placeTool();toolMesh.rotation.set(-.12,-.22,-.08);camera.add(toolMesh);if(preview){scene.remove(preview);preview.traverse(o=>{if(o.isMesh)o.material.dispose();});preview=null;}if(tool===5){preview=isToy()?createDelight(pieceKeys[pieceIndex]):createBuildPiece(pieceKeys[pieceIndex],MATERIALS[materialIndex]);preview.traverse(o=>{if(o.isMesh){o.material=new THREE.MeshBasicMaterial({color:'#e1f4a9',transparent:true,opacity:.4,depthWrite:false});o.castShadow=false;}});scene.add(preview);if(pieceKeys[pieceIndex]==='gutter'){connectionGhost=createDelight('waterWheel');connectionGhost.traverse(o=>{if(o.isMesh){o.material=new THREE.MeshBasicMaterial({color:'#81d6da',transparent:true,opacity:.19,depthWrite:false});o.castShadow=false;}});scene.add(connectionGhost);}}updateHUD();}
+function chooseTool(i){previewPumpKey='';connectionPreviewKey='';connectionPreview=null;if(connectionGhost){scene.remove(connectionGhost);connectionGhost.traverse(o=>{if(o.material)o.material.dispose();});connectionGhost=null;}resetActions();timedEcho=null;lastFailure=null;tool=i;swing=0;if(toolMesh)camera.remove(toolMesh);toolMesh=createTool(tools[i].key);toolMesh.scale.setScalar(i===3?.38:.55);placeTool();toolMesh.rotation.set(-.12,-.22,-.08);camera.add(toolMesh);if(preview){scene.remove(preview);disposeDelight(preview);preview.traverse(o=>{if(o.isMesh)o.material.dispose();});preview=null;}if(tool===5){preview=isToy()?createDelight(pieceKeys[pieceIndex]):createBuildPiece(pieceKeys[pieceIndex],MATERIALS[materialIndex]);preview.traverse(o=>{if(o.isMesh){o.material=new THREE.MeshBasicMaterial({color:'#e1f4a9',transparent:true,opacity:.4,depthWrite:false});o.castShadow=false;}});scene.add(preview);if(WATER_PORTS[pieceKeys[pieceIndex]]){
+ connectionGhost=new THREE.Group();
+ const p={kind:pieceKeys[pieceIndex],gx:0,gz:0,baseY:0,rotation:0};
+ for(const port of waterPorts(p)){
+  const sign=port.name==='inlet'?-1:1,dir=new THREE.Vector3(port.nx*sign,0,port.nz*sign),origin=new THREE.Vector3(port.x,port.y+.035,port.z);
+  if(port.name==='inlet')origin.addScaledVector(dir,-.35);
+  const arrow=new THREE.ArrowHelper(dir,origin,.35,port.name==='drive'?0xe5bb74:port.name==='inlet'?0xf2e4bd:0x83e3ec,.12,.085);connectionGhost.add(arrow);
+ }
+ scene.add(connectionGhost);
+}}updateHUD();}
 function cycle(delta){if(tool===5){pieceIndex=(pieceIndex+delta+pieceKeys.length)%pieceKeys.length;level=pieceKeys[pieceIndex]==='roof'?1:0;levelExplicit=false;}else{do{seedIndex=(seedIndex+delta+seedKeys.length)%seedKeys.length;}while(!seedUnlocked(state,seedKeys[seedIndex]));if(tool!==1)tool=1;}chooseTool(tool);}
 function browse(delta){if(tool===1||tool===5)cycle(delta);else chooseTool((tool+delta+tools.length)%tools.length);}
 function updateHUD(){
@@ -198,7 +211,7 @@ function updateHUD(){
 }
 const steps=[['shovel',0],['seed',1],['fill',2],['hose',3],['grow',null],['axe',4],['build',5]];
 
-function stageFor(p){return !p?0:p.phase==='hole'?(p.seed?2:1):p.seed?(p.growth>=1?5:p.water===0?3:4):0;}
+function stageFor(p){return !p?0:p.phase==='hole'?(p.seed?2:1):p.seed?(p.growth>=1?5:plotMoisture(p)===0?3:4):0;}
 function contextStage(){if(target?.wildId)return 5;const p=target&&state.plots[cellKey(target.gx,target.gz)];if(p)return stageFor(p);if(state.stats.harvested>0)return 6;const active=Object.values(state.plots).find(p=>p.growth<1);return active?stageFor(active):0;}
 function setupPictures(){
  for(const [id,name,key] of [['menuButton','build','Tab'],['journalButton','book','J'],['pauseBuild','build','Tab'],['pauseJournal','book','J'],['buildTab','build','Tab'],['journalTab','book','J']]){
@@ -218,7 +231,7 @@ function updateJournal(){
  if(state.stats.harvested>0){title=findHomes(state.buildings).length?'journal.explore':'journal.build';detail='journal.stats';params={harvests:state.stats.harvested,pieces:state.buildings.length};}
  else if(state.stats.planted>0){
   const planted=Object.values(state.plots).filter(p=>p.seed),aimed=target&&state.plots[cellKey(target.gx,target.gz)];
-  const stage=aimed?.growth>=1||planted.every(p=>p.growth>=1)?'ready':planted.some(p=>p.phase==='hole')?'cover':planted.some(p=>p.growth<1&&p.water===0)?'water':'grow';
+  const stage=aimed?.growth>=1||planted.every(p=>p.growth>=1)?'ready':planted.some(p=>p.phase==='hole')?'cover':planted.some(p=>p.growth<1&&plotMoisture(p)===0)?'water':'grow';
   title='journal.'+stage;detail=title+'Help';
  }
  const stage=contextStage();$('loopGuide').querySelectorAll('button').forEach((b,i)=>{b.classList.toggle('current',i===stage);b.classList.toggle('next',i===stage+1);});
@@ -385,15 +398,27 @@ function pick(){
  }
  if(target){target.distance=camera.position.distanceTo(target.point);const plant=state.plots[cellKey(target.gx,target.gz)];target.outOfReach=target.distance>(target.propId&&tool<5?3:(target.wildId||plant?.growth>=1)?3.8:6);}
  tileOutline.visible=!!target&&locked&&!target.outOfReach;if(target)tileOutline.position.set(target.gx*2,(target.baseY??0)+.035,target.gz*2);
- if(preview){preview.visible=!!target&&locked&&!target.outOfReach;if(target){const b=selectedBuild();if(!isToy())updateFoundation(preview,b,{ghost:true});preview.position.set(b.gx*2,(isToy()?b.baseY:baseOf(b)+b.level*2.4),b.gz*2);preview.rotation.y=b.rotation*Math.PI/2;const check=placementResult(b);placementQuery={candidate:b,validation:check};const valid=check.ok;tileOutline.position.y=baseOf(b)+b.level*2.4+.035;preview.traverse(o=>{if(o.isMesh)o.material.color.set(valid?'#d8f5a5':'#f49471');});}}
- if(connectionGhost){connectionGhost.visible=!!target&&locked&&!target.outOfReach;if(target){const b=selectedBuild(),[dx,dz]=rotateXZ(2,0,b.rotation);connectionGhost.position.set(b.gx*2+dx,b.baseY,b.gz*2+dz);connectionGhost.rotation.y=b.rotation*Math.PI/2;}}
+ if(preview){preview.visible=!!target&&locked&&!target.outOfReach;if(target){const b=selectedBuild();
+ if(b.kind==='pump'){
+  const intake=pumpIntake(b).intake,key=JSON.stringify(intake);
+  if(key!==previewPumpKey){previewPumpKey=key;scene.remove(preview);disposeDelight(preview);preview.traverse(o=>{if(o.isMesh)o.material.dispose();});preview=createDelight('pump',{intake});preview.traverse(o=>{if(o.isMesh){o.material=new THREE.MeshBasicMaterial({color:'#e1f4a9',transparent:true,opacity:.4,depthWrite:false});o.castShadow=false;}});scene.add(preview);}
+ }
+ if(!isToy())updateFoundation(preview,b,{ghost:true});preview.position.set(b.gx*2,(isToy()?b.baseY:baseOf(b)+b.level*2.4),b.gz*2);preview.rotation.y=b.rotation*Math.PI/2;const check=placementPreviewResult(b);placementQuery={candidate:b,validation:check};
+ if(check.ok&&WATER_PORTS[b.kind]){
+  const key=[b.kind,b.gx,b.gz,b.baseY,b.rotation,state.nextDelightId,state.nextId,state.delights.length,state.buildings.length].join(':');
+  if(key!==connectionPreviewKey){connectionPreviewKey=key;const candidate={...b,id:9007199254740000,on:true};connectionPreview=describeWaterNetwork({...state,delights:[...state.delights,candidate]},{solidsAt:physicalSolids});const trial=createWaterFlow().configure(connectionPreview.nodes,connectionPreview.edges);connectionPreview.rejected.push(...trial.rejected);connectionPreview.edges=connectionPreview.edges.filter(e=>trial.edges.some(a=>a.from===e.from&&a.to===e.to&&a.port===e.port));}
+  const id=9007199254740000,reason=connectionPreview?.rejected.find(e=>e.from===id||e.to===id)?.reason;
+  placementQuery.connection=reason?'water.'+reason:connectionPreview?.edges.some(e=>e.from===id||e.to===id)||connectionPreview?.drives.some(e=>e.from===id||e.to===id)?'water.connected':'water.unconnected';
+ }
+ const valid=check.ok;tileOutline.position.y=baseOf(b)+b.level*2.4+.035;preview.traverse(o=>{if(o.isMesh)o.material.color.set(valid?'#d8f5a5':'#f49471');});}}
+ if(connectionGhost){connectionGhost.visible=!!target&&locked&&!target.outOfReach;if(target){const b=selectedBuild(),[dx,dz]=rotateXZ(2,0,b.rotation);connectionGhost.position.set(b.gx*2,b.baseY,b.gz*2);connectionGhost.rotation.y=b.rotation*Math.PI/2;}}
 }
 function renderActionEcho(kind,progress,active,complete=false){
  timedEcho=actionEcho(timedEcho,{kind,progress,active,complete,visible:locked&&[3,4].includes(tool),now:elapsed});
  const html=timedEcho?`<span class="progressRing" style="--progress:${Math.round(timedEcho.progress*100)}">${icon(timedEcho.complete?'check':timedEcho.kind==='water'?'hose':'axe')}</span>`:'';
  if(html!==lastCue){$('targetCue').innerHTML=html;lastCue=html;}
  $('targetCue').hidden=!html;$('targetCue').className='';
- $('targetLabel').textContent=timedEcho?t(timedEcho.kind==='water'?'action.hose':'action.axe'):'';
+ if(![0,1].includes(tool))$('targetLabel').textContent=timedEcho?t(timedEcho.kind==='water'?'action.hose':'action.axe'):'';
 }
 function renderReward(){if(!lastReward)return;$('reward').innerHTML=lastReward.seed?icon('sparkle')+picture('seed:'+lastReward.seed,t('tree.'+lastReward.seed))+icon('check'):icon(lastReward.resource)+`<b>+${lastReward.amount}</b>`;$('reward').setAttribute('aria-label',lastReward.seed?t(lastReward.newSeed?'message.newSeed':'message.secret'):t('message.yield',{material:t('material.'+lastReward.resource),count:lastReward.amount}));}
 function reward(result){lastReward={resource:result.resource,amount:result.amount};renderReward();rewardUntil=elapsed+2.5;$('reward').classList.add('show');}
@@ -420,7 +445,22 @@ function pickup(result,x,z,baseY=0){
  for(let i=0;i<4;i++){const m=new THREE.Mesh(result.resource==='diamond'?new THREE.OctahedronGeometry(.17):new THREE.BoxGeometry(.22,.2,.25),new THREE.MeshStandardMaterial({color:colors[result.resource],metalness:['copper','iron'].includes(result.resource)?.3:0,roughness:.55}));addEffect(m,x,baseY+.8,z,1.6,new THREE.Vector3(Math.cos(i*1.7)*1.3,2.4+i*.2,Math.sin(i*1.7)*1.3),true);}
 }
 function liftBodies(){return [{id:'player',x:pos.x,z:pos.z,feet,height:1.65,radius:.24},...(residents?.bodies?.()??[])];}
-function outerBodies(){return [...outerLife.readingObjects(),whale.actor].map(a=>{const margin=a.kind==='whale'?.425:0;return {x:a.x,z:a.z,y:a.y+a.profile.minY-margin,feet:a.y+a.profile.minY-margin,height:a.profile.maxY-a.profile.minY+2*margin,radius:a.profile.radius+(a.kind==='whale'?.15:0)};});}
+function outerBodies(){return [...outerLife.readingObjects(),whale.actor].filter(a=>a.active!==false).map(a=>{const margin=a.kind==='whale'?.425:0;return {x:a.x,z:a.z,y:a.y+a.profile.minY-margin,feet:a.y+a.profile.minY-margin,height:a.profile.maxY-a.profile.minY+2*margin,radius:a.profile.radius+(a.kind==='whale'?.15:0)};});}
+function diggingActors(){return [...outerBodies(),...marineLife.animals.map(a=>({x:a.x,z:a.z,feet:a.y+a.profile.minY,height:a.profile.maxY-a.profile.minY,radius:a.profile.radius}))];}
+function plantingResult(gx,gz,seed){
+ const check=validatePlant(state,gx,gz,seed);if(!check.ok)return check;
+ const p=state.plots[cellKey(gx,gz)];if(!submergedPlot(p))return check;
+ const b=plantVolume({...p,seed},{reserve:true});
+ const bodies=[...liftBodies(),...outerBodies(),...marineLife.animals.map(a=>({x:a.x,z:a.z,feet:a.y+a.profile.minY,height:a.profile.maxY-a.profile.minY,radius:a.profile.radius}))];
+ const blocker=bodies.find(a=>touches(b,a.x,a.z,a.radius)&&b.maxY>a.feet&&b.minY<a.feet+a.height);
+ if(blocker)return {ok:false,code:blocker.id==='player'?'message.plantStepBack':'message.creatureRoom'};
+ return check;
+}
+// The action rejects a distant ray target before checking the candidate volume.
+function placementPreviewResult(b){
+ if(target?.outOfReach)return {ok:false,code:farTargetHint(target,state.plots,camera.position.y)};
+ return placementResult(b);
+}
 function placementResult(b){
  if(!b)return {ok:false,code:'message.closer'};
  const volumes=isToy()?propBoxes(b,{envelope:true}):boxes(b);if(volumes.length&&Math.min(...volumes.map(a=>Math.hypot(camera.position.x-Math.max(a.minX,Math.min(a.maxX,camera.position.x)),camera.position.y-Math.max(a.minY,Math.min(a.maxY,camera.position.y)),camera.position.z-Math.max(a.minZ,Math.min(a.maxZ,camera.position.z)))))>6)return {ok:false,code:'message.closer'};
@@ -434,8 +474,8 @@ function placementResult(b){
  if(outerBodies().some(a=>volumes.some(b=>touches(b,a.x,a.z,a.radius)&&b.maxY>a.feet&&b.minY<a.feet+a.height))||marineLife.animals.some(a=>volumes.some(b=>touches(b,a.x,a.z,a.profile.radius)&&b.maxY>a.y+a.profile.minY&&b.minY<a.y+a.profile.maxY)))return {ok:false,code:'message.creatureRoom'};
  return check;
 }
-function toyHint(p){const q=delights.motion.get(p.id);if(p.kind==='gutter')return t(q?.connectedTo?'ui.toyPour':'ui.toyConnect');if(p.kind==='waterWheel'&&!q?.connectedTo)return t('ui.toyBell');if(p.kind==='lamp'&&!q?.connectedTo)return t('ui.toyLamp');return '';}
-function updateToyButton(){const p=target?.propId&&state.delights.find(p=>p.id===target.propId),show=locked&&tool<5&&!!p&&!target.outOfReach;$('useButton').hidden=!show;$('hud').classList.toggle('usingToy',show);if(!show)return;tileOutline.visible=false;const pouring=p.kind==='gutter',key=p.kind+':'+i18n.language;if($('useButton').dataset.content===key)return;$('useButton').dataset.content=key;$('useButton').innerHTML=picture('prop:'+p.kind,t('prop.'+p.kind))+icon(pouring?'hose':'hand');$('useButton').setAttribute('aria-label',pouring?t('ui.toyPour'):t('ui.toyUse',{noun:t('prop.'+p.kind)}));}
+function toyHint(p){if(!p)return '';const q=delights.motion.get(p.id);if(WATER_PORTS[p.kind]){if(q?.waterReason)return t('water.'+q.waterReason);if(p.kind==='pump')return t(p.on?q?.flow>0?'water.pumpOn':'water.dry':'water.pumpOff');if(p.kind==='lift')return t(q?.driveId?q.powered?'water.powered':'water.dry':'water.manual');return t(q?.flow>0?'water.flowing':q?.waterConnected?'water.dry':'water.unconnected');}if(p.kind==='gutter')return t(q?.connectedTo?'ui.toyPour':'ui.toyConnect');if(p.kind==='waterWheel'&&!q?.connectedTo)return t('ui.toyBell');if(p.kind==='lamp'&&!q?.connectedTo)return t('ui.toyLamp');return '';}
+function updateToyButton(){const p=target?.propId&&state.delights.find(p=>p.id===target.propId),show=locked&&tool<5&&!!p&&!target.outOfReach;$('useButton').hidden=!show;$('hud').classList.toggle('usingToy',show);if(!show)return;tileOutline.visible=false;const pouring=p.kind==='gutter',key=p.kind+':'+p.on+':'+i18n.language;if($('useButton').dataset.content===key)return;$('useButton').dataset.content=key;$('useButton').innerHTML=picture('prop:'+p.kind,t('prop.'+p.kind))+icon(pouring?'hose':p.kind==='pump'?(p.on?'pause':'play'):'hand');$('useButton').setAttribute('aria-label',pouring?t('ui.toyPour'):t('ui.toyUse',{noun:t('prop.'+p.kind)}));}
 $('useButton').onmousedown=e=>{e.preventDefault();e.stopPropagation();audio.start();const p=state.delights.find(p=>p.id===target?.propId);if(p?.kind==='gutter'&&!target.outOfReach){if(tool!==3)chooseTool(3);held=true;}};
 $('useButton').onclick=e=>{e.stopPropagation();const p=state.delights.find(p=>p.id===target?.propId);if(!p||target.outOfReach)return;if(p.kind==='gutter'){if(tool!==3)chooseTool(3);}else delights.use(p.id);};
 function removalOptions(p){return {occupied:p?.kind==='lift'&&liftRiders(p,liftBodies()).length>0};}
@@ -448,7 +488,7 @@ function act(){
  if(!target||target.outOfReach){failure({code:target?farTargetHint(target,state.plots,camera.position.y):'target.aim'});return;}
  if(target.wildId){failure({code:'message.axeWild'});return;}
  const {gx,gz}=target,removedProp=state.delights.find(p=>p.id===target.propId),removedMaterial=removedProp?DELIGHTS[removedProp.kind].material:state.buildings.find(b=>b.id===target.buildId)?.material;let result;
- if(tool===0)result=dig(state,gx,gz);if(tool===1)result=plant(state,gx,gz,seedKeys[seedIndex]);if(tool===2)result=fill(state,gx,gz);
+ if(tool===0)result=dig(state,gx,gz,{actors:diggingActors()});if(tool===1){const check=plantingResult(gx,gz,seedKeys[seedIndex]);result=check.ok?plant(state,gx,gz,seedKeys[seedIndex]):check;}if(tool===2)result=fill(state,gx,gz);
  if(tool===5){const b=placementQuery?.candidate??selectedBuild();const check=placementResult(b);result=check.ok?(isToy()?placeDelight(state,b):build(state,b)):check;}
  if(tool===6){const p=state.delights.find(p=>p.id===target.propId);result=p?removeDelight(state,p.id,removalOptions(p)):remove(state,target.buildId);}
  if(result){toast(result);if(result.ok){dirty=true;swing=.25;if(tool!==3)audio.play(['dig','plant','fill','water','harvest','build','remove'][tool],{sourceId:target.propId?'prop:'+target.propId:target.buildId?'piece:'+target.buildId:'cell:'+cellKey(gx,gz),material:tool===5?(isToy()?DELIGHTS[pieceKeys[pieceIndex]].material:MATERIALS[materialIndex]):tool===6?removedMaterial:undefined,x:gx*2,y:target.baseY??0,z:gz*2});burst(gx,gz,undefined,target.baseY??0);sync();save();}}
@@ -456,7 +496,7 @@ function act(){
 function layoutContextActions(){const host=$('actionReadRow'),button=$('useButton');if(button.parentElement!==host)host.prepend(button);}
 layoutContextActions();
 function resize(){camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);placeTool();layoutContextActions();updateCatalogScroll();}window.addEventListener('resize',resize);
-delights=createDelightSystem({scene,getState:()=>state,getPlayer:()=>pos,changed:()=>{dirty=true;},continuous:(id,kind,options)=>audio.setContinuous(id,kind,options),event:(kind,point)=>{audio.play(kind,point);if(kind==='bell')marineLife.greet?.(point);},getBodies:liftBodies,moveRiders:(ids,delta)=>{if(ids.includes('player')){feet+=delta;vy=0;}residents?.carry?.(ids,delta);},obstacles:id=>[...state.buildings.flatMap(boxes),...state.delights.flatMap(p=>p.id===id?propBoxes(p).slice(0,-1):propBoxes(p)),...reefSolids]});
+delights=createDelightSystem({scene,solidsAt:physicalSolids,getState:()=>state,getPlayer:()=>pos,changed:()=>{dirty=true;},continuous:(id,kind,options)=>audio.setContinuous(id,kind,options),event:(kind,point)=>{audio.play(kind,point);if(kind==='bell')marineLife.greet?.(point);},getBodies:liftBodies,moveRiders:(ids,delta)=>{if(ids.includes('player')){feet+=delta;vy=0;}residents?.carry?.(ids,delta);},obstacles:id=>[...state.buildings.flatMap(boxes),...state.delights.flatMap(p=>p.id===id?propBoxes(p).slice(0,-1):propBoxes(p)),...reefSolids]});
 residents=createResidentSystem({scene,getState:()=>state,getPlayer:()=>pos,canStand:residentCanStand,floorHeight:residentFloor,getDelights:()=>delights,getWindows:()=>marineLife.windows,changed:()=>{dirty=true;},notice:r=>{audio.play('arrival',{sourceId:'resident:'+r.id,x:r.x,y:r.baseY??0,z:r.z});toast(r.habitat==='ocean'?'message.diver':'message.neighbour');}});
 garden=createGardenSystem({scene,getState:()=>state,getPlayer:()=>pos,canStand:(x,z)=>residentCanStand(x,z,terrainHeight(x,z))&&!state.buildings.some(b=>Math.abs(x-b.gx*2)<1.7&&Math.abs(z-b.gz*2)<1.7),getDelights:()=>delights,flyClear:(x,y,z,own)=>![...state.buildings.flatMap(boxes),...state.delights.filter(p=>p.id!==own).flatMap(p=>propBoxes(p))].some(a=>touches(a,x,z,.13)&&a.maxY>y&&a.minY<y+.3),treeHeight:key=>(plantMeshes.get(key)?.userData.perchHeight??3.5)+(state.plots[key]?.baseY??0),onDiscover:r=>{dirty=true;audio.play('discover',{sourceId:'discovery:'+r.id,x:pos.x,y:feet,z:pos.z});lastReward={seed:r.seed,newSeed:r.newSeed};renderReward();rewardUntil=elapsed+5;$('reward').classList.add('show');toast(r.newSeed?'message.newSeed':'message.secret');burst(Math.round(pos.x/2),Math.round(pos.z/2),'#eddb90');updateHUD();save();}});
 let currentReading=null,menuReading=null,lastReadingHTML='',lastReadingAt=0;
@@ -505,7 +545,7 @@ function updateReading(now){
  for(const [id,g] of delights.models){const p=state.delights.find(p=>p.id===id);add(g,{id:'prop:'+id,key:'prop.'+p.kind,picture:'prop:'+p.kind});}
  for(const [id,g] of residents.models){const r=state.residents.find(x=>x.id===id);if(r?.x!==null)add(g,{id:'resident:'+id,key:r.habitat==='ocean'?'noun.diver':'noun.resident',picture:`${r.habitat==='ocean'?'diver':'resident'}:${r.variant}:${r.outfit??0}`});}
  for(const a of garden.readingObjects())add(a.model,{id:`animal:${a.kind}:${a.index}`,key:'animal.'+a.kind,picture:'animal:'+a.kind});
- for(const a of outerLife.readingObjects())add(a.model,{id:'outer:'+a.id,key:'animal.'+a.kind,picture:'animal:'+a.kind});
+ for(const a of outerLife.readingObjects())add(a.model,{id:'outer:'+a.id,key:'animal.'+a.kind,picture:'animal:'+a.kind+(a.kind==='fish'?':'+((a.home.variant+a.index)%2):'')});
  for(const {actor:a,model} of marine)add(model,{id:'marine:'+a.id,focusKey:'marine:'+a.kind,key:'animal.'+a.kind,picture:'animal:'+a.kind+(a.kind==='fish'?':'+a.variant:'')});
  add(whale.model,{id:'marine:whale',key:'animal.whale',picture:'animal:whale'});
  readingRay.setFromCamera(center,camera);
@@ -608,7 +648,7 @@ function frame(now){
   const floor=floorAt(pos.x,pos.z),ceil=reefCeiling(physicalSolids(pos.x,pos.z),pos.x,pos.z,feet,Math.min(Infinity,...[...state.buildings.flatMap(boxes),...state.delights.flatMap(p=>propBoxes(p))].filter(a=>touches(a,pos.x,pos.z)&&a.minY>=feet+1.6).map(a=>a.minY)));
   const vertical=verticalStep({x:pos.x,z:pos.z,feet,vy,dt,forward:(keys.has('KeyW')?1:0)-(keys.has('KeyS')?1:0),pitch,rise:keys.has('Space'),dive:keys.has('KeyC')||keys.has('ControlLeft')||keys.has('ControlRight'),floor,ceil});feet=vertical.feet;vy=vertical.vy;
   const swimming=swimmingAt(pos.x,pos.z,feet);movementAudio.update({distance:Math.hypot(pos.x-oldX,pos.z-oldZ),vertical:feet-beforeFeet,grounded:wasGrounded&&!swimming&&Math.abs(feet-floor)<.08&&vy<=0,swimming,input:!!(dx||dz||keys.has('Space')||keys.has('KeyC')||keys.has('ControlLeft')||keys.has('ControlRight')),options:{...stepSurface(state.buildings,pos.x,pos.z,feet),sourceId:'player',x:pos.x,y:feet,z:pos.z}});
-  if(dx||dz||feet!==beforeFeet||Object.values(state.plots).some(p=>p.growth<1&&p.water>0))dirty=true;
+  if(dx||dz||feet!==beforeFeet||Object.values(state.plots).some(p=>p.growth<1&&plotMoisture(p)>0))dirty=true;
   outerLife.update(dt,pos);marineLife.update(dt,{x:pos.x,y:feet+1.65,z:pos.z});poseMarine(dt);whale.update(dt,pos);
 
 
@@ -654,7 +694,7 @@ function frame(now){
 }
 // Rendering is demand-started by explicit Play/Resume.
 // Read-only observation surface for browser verification and independent criticism.
-Object.defineProperty(window,'kauris',{value:Object.freeze({snapshot:()=>JSON.parse(JSON.stringify({display:{...display,tier:quality.tier.name},home:{anchor:homeAnchor,holding:homeHeld},readable:{target:target&&plotStage(state.plots[cellKey(target.gx,target.gz)]),houseNeed:cueNeed},state,player:{x:pos.x,z:pos.z,feet,yaw,pitch,supportId:state.delights.find(p=>p.kind==='lift'&&liftRiders(p,[{id:'player',x:pos.x,z:pos.z,feet}]).length)?.id??null,supportTop:floorAt(pos.x,pos.z)},swimming:swimmingAt(pos.x,pos.z,feet),locked,fallbackLook,tool:tools[tool].key,seed:seedKeys[seedIndex],piece:pieceKeys[pieceIndex],material:MATERIALS[materialIndex],level,rotation,target:target?{gx:target.gx,gz:target.gz,baseY:target.baseY,roomY:target.roomY,point:target.point,placement:tool===5?selectedBuild():null,validation:tool===5?placementResult(selectedBuild()).code:null,propId:target.propId,primaryAction:target.propId&&tool<5?state.delights.find(p=>p.id===target.propId)?.kind==='gutter'?'pour':'use':null,buildId:target.buildId,wildId:target.wildId,plot:target.plot,ground:target.ground,outOfReach:target.outOfReach}:null,chop:{key:chop.key,progress:chopProgress,impacts:totalImpacts},wild:visibleWild,world:{...worldRuntime.snapshot(),proxies:resourceHorizon.snapshot(),resourceGeometryBytes:[...outerGeometry].reduce((n,g)=>n+Object.values(g.attributes).reduce((sum,a)=>sum+a.array.byteLength,0)+Object.values(g.morphAttributes).flat().reduce((sum,a)=>sum+a.array.byteLength,0)+(g.index?.array.byteLength??0),0),fauna:outerLife.snapshot(),sample:sampleWorld(pos.x,pos.z),resourceModels:visibleWild.filter(r=>r.id.startsWith('w1:')).length,bookkeepingMs:worldTiming.slice()},places:PLACES,homes:findHomes(state.buildings),residents:(state.residents??[]).map(r=>({...r,modelKind:residents.models.get(r.id)?.name,helmetVisible:!!residents.models.get(r.id)?.getObjectByName('diver-helmet')?.visible,walking:residents.motion.get(r.id)?.walking??0,feet:residents.models.get(r.id)?.position.y,encounter:residents.motion.get(r.id)?.trip?.propId??null,sitting:residents.motion.get(r.id)?.sit??0,bundleVisible:residents.motion.get(r.id)?.bundle.visible??false})),garden:{animals:garden.snapshot(),discoveries:activeDiscoveries(state),audio:audio.snapshot()},language:i18n.language,reading:currentReading,marine:marineLife.snapshot(),marineTime:marineLife.time,activeTime:livingTime,whale:whale.snapshot(),delights:delights.snapshot(),performance:{paidModels:[...buildMeshes].map(([id,g])=>({id,modelId:g.uuid,visible:g.visible,presented:!!(g.layers.mask&1)})),sceneGeometryBytes:sceneGeometryBytes(),gpuGeometries:renderer.info.memory.geometries,boot:boot?.marks??[],renderedFrames:frames,averageFrameMs:timing.reduce((a,b)=>a+b,0)/Math.max(1,timing.length),calls:renderer.info.render.calls,triangles:renderer.info.render.triangles}}))}),writable:false});
+Object.defineProperty(window,'kauris',{value:Object.freeze({snapshot:()=>JSON.parse(JSON.stringify({display:{...display,tier:quality.tier.name},home:{anchor:homeAnchor,holding:homeHeld},readable:{target:target&&plotStage(state.plots[cellKey(target.gx,target.gz)]),houseNeed:cueNeed},state,player:{x:pos.x,z:pos.z,feet,yaw,pitch,supportId:state.delights.find(p=>p.kind==='lift'&&liftRiders(p,[{id:'player',x:pos.x,z:pos.z,feet}]).length)?.id??null,supportTop:floorAt(pos.x,pos.z)},swimming:swimmingAt(pos.x,pos.z,feet),locked,fallbackLook,tool:tools[tool].key,seed:seedKeys[seedIndex],piece:pieceKeys[pieceIndex],material:MATERIALS[materialIndex],level,rotation,target:target?{gx:target.gx,gz:target.gz,baseY:target.baseY,roomY:target.roomY,point:target.point,placement:tool===5?selectedBuild():null,validation:tool===5?placementPreviewResult(selectedBuild()).code:null,propId:target.propId,primaryAction:target.propId&&tool<5?state.delights.find(p=>p.id===target.propId)?.kind==='gutter'?'pour':'use':null,buildId:target.buildId,wildId:target.wildId,plot:target.plot,ground:target.ground,outOfReach:target.outOfReach}:null,chop:{key:chop.key,progress:chopProgress,impacts:totalImpacts},wild:visibleWild,world:{...worldRuntime.snapshot(),proxies:resourceHorizon.snapshot(),resourceGeometryBytes:[...outerGeometry].reduce((n,g)=>n+Object.values(g.attributes).reduce((sum,a)=>sum+a.array.byteLength,0)+Object.values(g.morphAttributes).flat().reduce((sum,a)=>sum+a.array.byteLength,0)+(g.index?.array.byteLength??0),0),fauna:outerLife.snapshot(),faunaStatus:outerLife.diagnostics(),sample:sampleWorld(pos.x,pos.z),resourceModels:visibleWild.filter(r=>r.id.startsWith('w1:')).length,bookkeepingMs:worldTiming.slice()},places:PLACES,homes:findHomes(state.buildings),residents:(state.residents??[]).map(r=>({...r,modelKind:residents.models.get(r.id)?.name,helmetVisible:!!residents.models.get(r.id)?.getObjectByName('diver-helmet')?.visible,walking:residents.motion.get(r.id)?.walking??0,feet:residents.models.get(r.id)?.position.y,encounter:residents.motion.get(r.id)?.trip?.propId??null,sitting:residents.motion.get(r.id)?.sit??0,bundleVisible:residents.motion.get(r.id)?.bundle.visible??false})),garden:{animals:garden.snapshot(),discoveries:activeDiscoveries(state),audio:audio.snapshot()},language:i18n.language,reading:currentReading,marine:marineLife.snapshot(),marineTime:marineLife.time,activeTime:livingTime,whale:whale.snapshot(),delights:delights.snapshot(),water:delights.waterSnapshot(),performance:{paidModels:[...buildMeshes].map(([id,g])=>({id,modelId:g.uuid,visible:g.visible,presented:!!(g.layers.mask&1)})),sceneGeometryBytes:sceneGeometryBytes(),gpuGeometries:renderer.info.memory.geometries,boot:boot?.marks??[],renderedFrames:frames,averageFrameMs:timing.reduce((a,b)=>a+b,0)/Math.max(1,timing.length),calls:renderer.info.render.calls,triangles:renderer.info.render.triangles}}))}),writable:false});
 
 function wake(){if(!runtimeReady||document.hidden||!locked)return;previous=null;quality.reset();qualityWarmUntil=performance.now()+2000;if(!frameHandle)frameHandle=requestAnimationFrame(frame);}
 function pauseGame(){if(!runtimeReady)return;audio.pause();resetActions();keys.clear();homeHeld=0;rightDrag=false;locked=false;cancelAnimationFrame(frameHandle);frameHandle=0;previous=null;quality.reset();document.exitPointerLock?.();clearReading();if(!catalogOpen){$('overlay').hidden=false;refreshPause();}save();}
@@ -673,8 +713,16 @@ function returnHome(){
  resetActions();keys.clear();homeHeld=0;vy=0;rightDrag=false;audio.pause();pos.set(result.x,0,result.z);feet=result.feet;yaw=result.yaw;pitch=-.35;camera.position.set(pos.x,feet+1.7,pos.z);camera.rotation.set(pitch,yaw,0,'YXZ');camera.updateMatrixWorld();state.home=result.home;worldRuntime.update(pos.x,pos.z);syncWild();refreshInteractive();dirty=true;save();showHomeStatus('home.arrived');previous=null;if(locked)audio.start();return true;
 }
 function updateReadable(){
+ if(locked&&[0,1].includes(tool)){
+  const result=target&&!target.propId&&!target.outOfReach?(tool===0?validateDig(state,target.gx,target.gz,{actors:diggingActors()}):plantingResult(target.gx,target.gz,seedKeys[seedIndex])):null;
+  const label=result&&!result.ok?t(result.code,result.params):'',node=$('targetLabel');
+  if(node.textContent!==label)node.textContent=label;
+  const cue=result?.code==='message.seaSeedWater'?icon('seed')+icon('water'):'';
+  if($('targetCue').innerHTML!==cue)$('targetCue').innerHTML=cue;
+  $('targetCue').hidden=!cue;
+ }
  const p=target&&!target.outOfReach&&state.plots[cellKey(target.gx,target.gz)],stage=plotStage(p);let focused=p&&stage?{id:cellKey(p.gx,p.gz),x:p.gx*2,y:p.baseY,z:p.gz*2,kind:stage,plantKind:p.seed}:null;
- for(const mesh of plotsGroup.children)if(mesh.userData.soil){const q=state.plots[mesh.userData.plot];mesh.material=q?.water>0?readable.soilMaterials.wet:readable.soilMaterials.dry;}
+ for(const mesh of plotsGroup.children)if(mesh.userData.soil){const q=state.plots[mesh.userData.plot];mesh.material=plotMoisture(q)>0?readable.soilMaterials.wet:readable.soilMaterials.dry;}
  const key=target&&!target.outOfReach&&tool===5?`${target.gx},${target.gz}:${target.roomY??target.baseY}`:'';
  if(key!==cueNeedKey){cueNeedKey=key;cueNeed=key?targetHouseInfo()?.need:null;cueNeedUntil=elapsed+5;}
  const b=placementQuery?.candidate,check=placementQuery?.validation;
