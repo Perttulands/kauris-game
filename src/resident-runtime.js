@@ -4,7 +4,7 @@ import {createDelight} from './delight-visuals.js';
 import {propAnchor,propPoint} from './delights.js';
 import {findHomes} from './residents.js';
 // Short doorway corridors, not world navigation. Obstructed friends wait and retry.
-export function createResidentSystem({scene,getState,canStand,floorHeight,notice,changed,getPlayer=()=>null,getDelights=()=>null,getWindows=()=>[]}){
+export function createResidentSystem({scene,getState,canStand,floorHeight,notice,changed,getPlayer=()=>null,getDelights=()=>null,getWindows=()=>[],getOutingTargets=()=>[]}){
  const models=new Map(),motion=new Map(),gifts=new Map();
  const rest=d=>({x:d.x-d.nx*.95-d.nz*.28,z:d.z-d.nz*.95+d.nx*.28});
  const waypoints=d=>[{x:d.x+d.nx*.45,z:d.z+d.nz*.45},{x:d.x-d.nx*.55,z:d.z-d.nz*.55},rest(d)];
@@ -36,6 +36,19 @@ export function createResidentSystem({scene,getState,canStand,floorHeight,notice
   const seatProp=!r.rideId&&r.status==='home'&&(getState().delights??[]).find(p=>p.kind==='hammock'&&Math.abs(p.baseY-(r.baseY??0))<.2&&Math.hypot(r.x-p.gx*2,r.z-p.gz*2)<.24);
   if(seatProp){const seat=propAnchor(seatProp,'seat');m.recoverRest=seatProp.id;m.supportFeet=seat.y-.171;m.sit=m.rest=1;g.position.set(seat.x,m.supportFeet,seat.z);g.rotation.y=seatProp.rotation*Math.PI/2;animateResident(g,{time:0,sit:1,rest:1,diver:r.habitat==='ocean'});}
  }}
+ function planOuting(r,m,home,inner,near,outer){
+  const candidates=getOutingTargets(r);
+  if(!Array.isArray(candidates))return null;
+  const nearby=candidates.slice(0,8).filter(p=>p&&['plant','shore'].includes(p.kind)&&Number.isFinite(p.x)&&Number.isFinite(p.z)&&Math.hypot(p.x-home.x,p.z-home.z)<9);
+  for(let i=0;i<nearby.length;i++){
+   const p=nearby[(i+(m.outings??0))%nearby.length],destination={x:p.x,z:p.z};
+   const points=[inner,near,outer,destination,outer,near,inner,home];let previous=r;
+   if(!points.every(q=>{const safe=corridor(previous,q,r.baseY??0);previous=q;return safe;}))continue;
+   m.outings=(m.outings??0)+1;
+   return {points,index:0,pause:0,outside:-1,outing:p,actionIndex:3,acting:false,actionTime:0};
+  }
+  return null;
+ }
  function planEncounter(r,m,home,inner,near,outer){
   const toys=getDelights();if(!toys)return null;
   const window=getWindows().find(w=>Math.abs(w.baseY-(r.baseY??0))<.1&&r.cells.includes(`${Math.round(w.inside.x/2)},${Math.round(w.inside.z/2)}`));
@@ -53,6 +66,7 @@ export function createResidentSystem({scene,getState,canStand,floorHeight,notice
  }
  function perform(r,g,m,trip,dt){
   const toys=getDelights(),p=getState().delights.find(p=>p.id===trip.propId);trip.actionTime+=dt;
+  if(trip.outing){const target=trip.outing.lookAt,player=getPlayer();const look=target&&Number.isFinite(target.x)&&Number.isFinite(target.z)?target:player;if(look)g.rotation.y=Math.atan2(look.x-r.x,look.z-r.z);m.wave=Math.max(m.wave,.7);return trip.actionTime<6;}
   if(trip.window){g.rotation.y=Math.atan2(trip.window.nx,trip.window.nz);m.wave=Math.max(m.wave,.7);return trip.actionTime<8;}
   if(!p){r.rideId=null;m.supportFeet=null;return false;}
   if(p.kind==='hammock'){const seat=toys.anchor(p.id,'seat');m.sit=1;m.rest=1;r.x=seat.x;r.z=seat.z;m.supportFeet=seat.y-.171;g.rotation.y=p.rotation*Math.PI/2;g.rotation.z=(toys.motion.get(p.id)?.swing??0)*.06;return trip.actionTime<12;}
@@ -76,9 +90,10 @@ export function createResidentSystem({scene,getState,canStand,floorHeight,notice
   if(!m.trip){
    if(m.timer<12+r.id%3*2)return;
    const away=Math.hypot(r.x-home.x,r.z-home.z)>.4;
-   const encounter=!away?planEncounter(r,m,home,inner,near,outer):null;if(encounter){m.trip=encounter;}
+   const outing=()=>planOuting(r,m,home,inner,near,outer),encounterPlan=()=>planEncounter(r,m,home,inner,near,outer);
+   const encounter=away?null:m.visits%2===0?(outing()??encounterPlan()):(encounterPlan()??outing());if(encounter){m.trip=encounter;}
    const points=away?[near,inner,home]:[inner,near,outer,near,inner,home];let previous=r;
-   if(!points.every(p=>{const safe=corridor(previous,p,r.baseY??0);previous=p;return safe;})){m.timer=8;return;}
+   if(!m.trip&&!points.every(p=>{const safe=corridor(previous,p,r.baseY??0);previous=p;return safe;})){m.timer=8;return;}
    m.trip??={points,index:0,pause:0,outside:away?-1:2};
   }
   const trip=m.trip;if(trip.acting){if(perform(r,g,m,trip,dt))return;trip.acting=false;trip.index++;m.sit=0;m.rest=0;m.supportFeet=null;m.visits++;g.rotation.z=0;getDelights()?.release('resident:'+r.id);}
@@ -109,7 +124,7 @@ export function createResidentSystem({scene,getState,canStand,floorHeight,notice
    const player=getPlayer(),near=player&&Math.hypot(player.x-r.x,player.z-r.z)<4;
    if(near&&!m.walking&&Math.sin(time*.6+r.id)>.9)m.wave=Math.max(m.wave,.7);
    const flowers=Object.values(getState().plots??{}).filter(p=>['flowers','starflower'].includes(p.seed)&&p.growth>.5&&Math.hypot(p.gx*2-r.x,p.gz*2-r.z)<5);
-   const look=flowers.length?.9:near?.25:0;
+   const look=m.trip?.acting&&m.trip.outing?.kind==='plant'?.9:flowers.length?.9:near?.25:0;
    const targetYaw=g.rotation.y;if(m.yaw===null)m.yaw=targetYaw;else m.yaw+=Math.atan2(Math.sin(targetYaw-m.yaw),Math.cos(targetYaw-m.yaw))*(1-Math.exp(-dt*12));g.rotation.y=m.yaw;
    housewarming(r,g,m,dt);g.position.set(r.x,m.supportFeet??floorHeight(r.x,r.z,r.baseY??0),r.z);animateResident(g,{time:time+r.id,walk:m.walking,wave:Math.min(1,m.wave),sit:m.sit,look,celebrate:m.wave>1.5?1:0,moveSpeed:r.status==='arriving'?.85:.6,diver:r.habitat==='ocean',carry:r.welcomeStage<2?1:0,rest:m.rest});
   }

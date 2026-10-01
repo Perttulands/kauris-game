@@ -26,14 +26,21 @@ export function pipeBoxes(intake){
  const points=[[0,1.1,-.6],intake.elbow,intake.mouth];
  return points.slice(1).map((b,i)=>{const a=points[i];return box(Math.min(a[0],b[0])-.1,Math.max(a[0],b[0])+.1,Math.min(a[1],b[1])-.1,Math.max(a[1],b[1])+.1,Math.min(a[2],b[2])-.1,Math.max(a[2],b[2])+.1);});
 }
-export function pumpIntake(p){
- const at=waterPoint(p,[0,0,-2]),{gx,gz}=cellAt(at.x,at.z),cell=sampleCell(gx,gz);
+export function pumpIntake(p,{surface=(x,z)=>{const c=cellAt(x,z);return sampleCell(c.gx,c.gz);}}={}){
  const fail=code=>({ok:false,code,intake:null,boxes:[]});
- if(cell.waterY===null)return fail('message.pumpWater');
- const bottom=cell.height+.20,top=cell.waterY-.15;
- if(bottom>top)return fail('message.pumpDepth');
- const mouthY=Math.max(bottom,Math.min(top,p.baseY+.20)),localY=mouthY-p.baseY,outletY=p.baseY+1.32;
- if(localY< -2.9||localY>1||outletY<=mouthY||outletY-mouthY>4)return fail('message.pumpHeight');
- const intake={mouth:[0,localY,-2],elbow:[0,1.1,-2]};
- return {ok:true,code:'message.place',intake,boxes:pipeBoxes(intake),mouth:waterPoint(p,intake.mouth),cell};
+ if(!Number.isFinite(p.baseY)||!Number.isFinite(p.gx)||!Number.isFinite(p.gz))return fail('message.pumpHeight');
+ let reason='message.pumpWater';
+ // A dry raised host covers the own-cell vertical pipe: retain the shore/pier
+ // intake outside that floor. Otherwise prefer real water in the pump's own tile.
+ for(const localZ of [-.8,-2]){
+  const at=waterPoint(p,[0,0,localZ]),cell=surface(at.x,at.z);
+  if(cell.waterY===null||!Number.isFinite(cell.waterY))continue;
+  if(localZ===-.8&&p.hostId!=null&&p.baseY>cell.waterY)continue;
+  const floor=cell.floor??cell.height,bottom=floor+.105,top=cell.waterY-.105;
+  if(bottom>top){reason='message.pumpDepth';continue;}
+  const mouthY=Math.max(bottom,Math.min(top,p.baseY+.20)),localY=mouthY-p.baseY;
+  const intake={mouth:[0,localY,localZ],elbow:[0,1.1,localZ]};
+  return {ok:true,code:'message.place',intake,boxes:pipeBoxes(intake),mouth:waterPoint(p,intake.mouth),cell,ownCell:localZ===-.8};
+ }
+ return fail(reason);
 }

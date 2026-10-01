@@ -152,18 +152,18 @@ function makeChannel(root,b,spec,split){
   if(split)chevron(b,.52,.698,0,0,.8);
   chevron(b,0,.698,.53,-Math.PI/2,.8);
   const water=new Batch(wet);
-  water.add('box','water',split?0:-.35,.712,0,split?1.76:1.06,.01,.25);
-  water.add('box','water',0,.712,.48,.25,.01,.8);child(root,water,'water');
+  water.add('box','water',split?0:-.35,.712,0,split?1.8:1.1,.01,.25);
+  water.add('box','water',0,.712,.45,.25,.01,.9);child(root,water,'water');
   const pulses=new Batch(wet);
   // Three bright dashes are moved along the open portions, never beyond ports.
-  pulses.add('box','foam',-.48,.722,0,.10,.006,.10);
-  if(split)pulses.add('box','foam',.48,.722,0,.10,.006,.10);
-  pulses.add('box','foam',0,.722,.48,.10,.006,.10);
+  pulses.add('box','foam',-.72,.722,0,.10,.006,.17);
+  if(split)pulses.add('box','foam',.26,.722,0,.10,.006,.17);
+  pulses.add('box','foam',0,.722,.25,.17,.006,.10);
   const dots=child(root,pulses,'channel-pulses'),source=dots.geometry.attributes.position;
   const travel=source.clone();
   for(let i=0;i<source.count;i++){
     const x=source.getX(i),z=source.getZ(i);
-    if(z>.2)travel.setZ(i,z+.22);else travel.setX(i,x+.22);
+    if(z>.2)travel.setZ(i,z+.50);else travel.setX(i,x+.50);
   }
   dots.geometry.morphAttributes.position=[travel];dots.updateMorphTargets();
 }

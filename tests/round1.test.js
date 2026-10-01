@@ -9,11 +9,15 @@ test('wheel accumulates small deltas, throttles big bursts, and leaves menus alo
  assert.equal(wheelStep(w,-3,1,300,true),-1);assert.equal(wheelStep(w,300,0,500,false),0);
  assert.equal(wheelStep(w,8,0,600,true),0);assert.equal(wheelStep(w,-100,0,620,true),-1);
 });
-test('held chop has multiple impacts, cancels cleanly, and cannot complete twice',()=>{
- const c={};let hits=0;
- for(let i=0;i<9;i++){const r=advanceChop(c,'a',.1);hits+=r.impact;assert.equal(r.complete,false);}assert.equal(hits,1);
- advanceChop(c,null,0);assert.equal(c.elapsed,0);advanceChop(c,'a',.1);advanceChop(c,'b',.1);assert.equal(c.elapsed,.1);
- let complete=0;for(let i=0;i<30;i++)complete+=advanceChop(c,'b',.1).complete;assert.equal(complete,1);
+test('chop shares a strike cadence and cancellation cannot bypass it',()=>{
+ const c={};let hits=0,complete=0;
+ for(let i=0;i<30;i++){const r=advanceChop(c,'a',i*.1,1.8,{held:true});hits+=r.impact;complete+=r.complete;}
+ assert.equal(hits,3);assert.equal(complete,1);
+ advanceChop(c,null,3);assert.equal(c.elapsed,0);
+ assert.equal(advanceChop(c,'b',3,1.8,{press:true}).impact,true);
+ advanceChop(c,null,3.1);
+ assert.equal(advanceChop(c,'c',3.1,1.8,{press:true}).impact,false);
+ assert.equal(advanceChop(c,'c',3.6,1.8,{press:true}).impact,true);
 });
 test('wild occupancy releases after exact one-time yield and survives reload',()=>{
  const s=freshState(),r=liveWild(s).find(x=>x.kind==='oak'),before=s.inventory.wood;

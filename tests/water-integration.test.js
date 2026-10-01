@@ -67,9 +67,9 @@ test('water models reuse shared geometry and dispose every private intake',async
 });
 
 test('plant-first and pump-first reserve the same intake space without charging',()=>{
- const s=funded();assert.ok(dig(s,0,34).ok);assert.ok(plant(s,0,34,'kelp').ok);assert.ok(fill(s,0,34).ok);
- const p={kind:'pump',gx:0,gz:35,rotation:0,baseY:naturalPropBase('pump',0,35),hostId:null};
+ const s=funded();assert.ok(dig(s,0,16).ok);assert.ok(plant(s,0,16,'kelp').ok);assert.ok(fill(s,0,16).ok);
+ const p={kind:'pump',gx:0,gz:15,rotation:2,baseY:naturalPropBase('pump',0,15),hostId:null};
  const before=serialize(s);assert.equal(validateDelight(s,p).code,'message.pumpBlocked');assert.equal(placeDelight(s,p).code,'message.pumpBlocked');assert.equal(serialize(s),before);
  assert.equal(describeWaterNetwork({...s,delights:[{...p,id:99,on:true}]}).nodes[0].sourceValid,false);
- const reverse=funded();put(reverse,'pump',0,35);assert.ok(dig(reverse,0,34).ok);assert.equal(validatePlant(reverse,0,34,'kelp').ok,false);
+ const reverse=funded();put(reverse,'pump',0,15,2);assert.ok(dig(reverse,0,16).ok);assert.equal(validatePlant(reverse,0,16,'kelp').ok,false);
 });

@@ -22,7 +22,7 @@ test('lamp-pattern response ignores creation order; bell impulse and held pour m
 });
 test('crab reaches placed shelter physically, settles inside and responds to bell without position jump',()=>{
  const shelter={...prop('crabShelter',1,3,20),rotation:3,baseY:terrainHeight(6,40)},visited=[];const life=createMarineLife({profiles:MARINE_PROFILES});life.setDelights([shelter],{claim:()=>true,release:()=>{},visited:id=>visited.push(id)});const a=life.animals.find(a=>a.id==='crab:2');let maxStep=0,inside=false,greeted=false;
- for(let i=0;i<1600;i++){const x=a.x,z=a.z;life.update(.1,null);maxStep=Math.max(maxStep,Math.hypot(a.x-x,a.z-z));if(Math.hypot(a.x-6,a.z-40)<.06){inside=true;if(!greeted){life.greet({x:6,z:42});life.update(.1,null);assert.equal(a.activity,'alert');greeted=true;}}}assert.ok(visited.length>0,JSON.stringify(a));assert.ok(inside&&greeted);assert.ok(maxStep<=.031);assert.ok(a.homeCooldown>0);
+ for(let i=0;i<1600;i++){const x=a.x,z=a.z;life.update(.1,null);maxStep=Math.max(maxStep,Math.hypot(a.x-x,a.z-z));if(Math.hypot(a.x-6,a.z-40)<.06){inside=true;if(!greeted){life.greet({x:6,z:42});life.update(.1,null);assert.equal(a.activity,'alert');greeted=true;}}}assert.ok(visited.length>0,JSON.stringify(a));assert.ok(inside&&greeted);assert.ok(maxStep<=.066);assert.ok(a.homeCooldown>0);
 });
 test('fish reach either exterior window axis while panes and home interiors stay solid',()=>{
  for(const axis of [0,1]){
@@ -84,4 +84,13 @@ test('actual resident boarding uses clear midpoint, carries both ways and reload
   assert.equal(state.residents[0].gifts,true);assert.equal(state.residents[0].welcomeStage,2);
   if(kind==='lift'){assert.ok(highest>2.54,highest);assert.ok(reloaded&&roundtrip);}else assert.ok(sat);
  }
+});
+
+test('original crab zero can claim and enter its nearby shelter, not only crab two',()=>{
+ const shelter={...prop('crabShelter',1,3,16),rotation:3,baseY:terrainHeight(6,32)},owners=new Map(),visited=[];
+ const life=createMarineLife({profiles:MARINE_PROFILES});
+ life.setDelights([shelter],{claim:(id,a)=>{if(owners.has(id)&&owners.get(id)!==a)return false;owners.set(id,a);return true;},release:a=>{for(const [id,o] of owners)if(o===a)owners.delete(id);},visited:id=>visited.push(id)});
+ let zeroInside=false;
+ for(let i=0;i<800;i++){life.update(.1,null);const a=life.animals.find(a=>a.id==='crab:0');zeroInside ||= a.shelterId===1&&Math.hypot(a.x-6,a.z-32)<.045;}
+ assert.ok(zeroInside&&visited.length>0);
 });

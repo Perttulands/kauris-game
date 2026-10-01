@@ -1,3 +1,5 @@
+import {waterGeometry} from './water-geometry.js';
+import {createWaterJoin,animateWaterJoin,disposeWaterJoin} from './water-join-visuals.js';
 import {createWaterFlow} from './water-flow.js';
 import {describeWaterNetwork,waterPorts} from './water-connections.js';
 import {pumpIntake,WATER_KINDS} from './water-spec.js';
@@ -5,11 +7,10 @@ import * as THREE from 'three';
 import {createDelight,animateDelight,disposeDelight} from './delight-visuals.js';
 import {DELIGHTS,propAnchor,propPoint,propBoxes,connectedWheel,nearestProp,stepLift} from './delights.js';
 // Bounded visible mechanisms. Commands/costs remain in the pure domain module.
-export function createDelightSystem({scene,getState,getPlayer,changed,event,continuous=()=>{},getBodies,moveRiders,obstacles,solidsAt=()=>[]}){
- const models=new Map(),motion=new Map(),links=new Map(),shells=new Map();let time=0,topologyKey='',network={nodes:[],edges:[],drives:[],rejected:[]};const flow=createWaterFlow();
+export function createDelightSystem({scene,getState,getPlayer,changed,event,continuous=()=>{},getBodies,moveRiders,obstacles,solidsAt=()=>[],geometryVersion=()=>0}){
+ const models=new Map(),motion=new Map(),links=new Map(),shells=new Map();let time=0,topologyKey='',network={nodes:[],edges:[],drives:[],rejected:[],joins:[]},waterSolids=[];const flow=createWaterFlow();
  const lightPool=Array.from({length:2},()=>{const l=new THREE.PointLight('#c1eff0',0,5,2);scene.add(l);return l;});
- const bridgeGeometry=new THREE.CylinderGeometry(.014,.014,1,7),bridgeMaterial=new THREE.MeshStandardMaterial({color:'#a6e7ec',emissive:'#478b96',emissiveIntensity:.25,transparent:true,opacity:.8});
- const driveGeometry=new THREE.CylinderGeometry(.045,.045,1,8),driveMaterial=new THREE.MeshStandardMaterial({color:'#8295a1',roughness:.55}),dropGeometry=new THREE.SphereGeometry(.014,6,4);
+ const driveGeometry=new THREE.CylinderGeometry(.045,.045,1,8),driveMaterial=new THREE.MeshStandardMaterial({color:'#8295a1',roughness:.55});
  const yAxis=new THREE.Vector3(0,1,0),direction=new THREE.Vector3();
  function sync(){
   const props=getState().delights??[];
@@ -19,19 +20,28 @@ export function createDelightSystem({scene,getState,getPlayer,changed,event,cont
    }
    if(p.kind==='crabShelter'&&p.visited&&!shells.has(p.id)){const g=createDelight('shell'),a=propAnchor(p,'shell');g.position.set(a.x,a.y,a.z);g.rotation.y=p.rotation*Math.PI/2;scene.add(g);shells.set(p.id,g);}
   }
-  const key=props.map(p=>[p.id,p.kind,p.gx,p.gz,p.rotation,p.baseY,p.on].join(',')).join(';')+'|'+(getState().buildings??[]).map(b=>[b.id,b.kind,b.gx,b.gz,b.rotation,b.baseY,b.level].join(',')).join(';')+'|'+Object.values(getState().plots??{}).filter(p=>p.seed).map(p=>[p.gx,p.gz,p.seed,p.baseY].join(',')).join(';');
+  const key=geometryVersion()+'|'+props.map(p=>[p.id,p.kind,p.gx,p.gz,p.rotation,p.baseY,p.on].join(',')).join(';')+'|'+(getState().buildings??[]).map(b=>[b.id,b.kind,b.gx,b.gz,b.rotation,b.baseY,b.level].join(',')).join(';')+'|'+Object.values(getState().plots??{}).filter(p=>p.seed).map(p=>[p.gx,p.gz,p.seed,p.baseY].join(',')).join(';');
   if(key!==topologyKey){
    topologyKey=key;network=describeWaterNetwork(getState(),{solidsAt});
    const configured=flow.configure(network.nodes,network.edges);
    network.rejected.push(...configured.rejected);
    network.edges=network.edges.filter(e=>configured.edges.some(a=>a.from===e.from&&a.to===e.to&&a.port===e.port));
-   for(const g of links.values())scene.remove(g);links.clear();
+   waterSolids=network.joins.flatMap(p=>p.boxes);
+   const wanted=new Set();
    for(const p of props)for(const port of waterPorts(p).filter(a=>a.name.startsWith('outlet'))){
-    const edge=network.edges.find(e=>e.from===p.id&&e.port===port.name),end=edge?.b??{x:port.x+port.nx*.16,y:port.y-.35,z:port.z+port.nz*.16};
-    const g=new THREE.Group(),stream=new THREE.Mesh(bridgeGeometry,bridgeMaterial),drop=new THREE.Mesh(dropGeometry,bridgeMaterial);g.add(stream,drop);g.userData={from:p.id,a:port,b:end,split:p.kind==='splitter',stream,drop};
-    direction.set(end.x-port.x,end.y-port.y,end.z-port.z);stream.position.set((port.x+end.x)/2,(port.y+end.y)/2,(port.z+end.z)/2);stream.scale.y=direction.length();stream.quaternion.setFromUnitVectors(yAxis,direction.normalize());scene.add(g);links.set(p.id+':'+port.name,g);
+    const key=p.id+':'+port.name,edge=network.edges.find(e=>e.from===p.id&&e.port===port.name);
+    const plan=network.joins.find(j=>j.key===key)??waterGeometry({key,kind:'spill',from:p.id,port:port.name,nx:port.nx,nz:port.nz,path:[port,{x:port.x+port.nx*.16,y:port.y-.35,z:port.z+port.nz*.16}]});
+    const shape=JSON.stringify([plan.kind,plan.path]),old=links.get(key);wanted.add(key);
+    if(old?.userData.shape!==shape){if(old)disposeWaterJoin(old);const g=createWaterJoin(plan);g.userData={shape,from:p.id,split:p.kind==='splitter',blocked:plan.kind!=='spill'&&!edge};g.traverse(o=>{if(o.isMesh)o.userData.propId=p.id;});scene.add(g);links.set(key,g);}
+    else old.userData.blocked=plan.kind!=='spill'&&!edge;
    }
-   for(const d of network.drives){const g=new THREE.Mesh(driveGeometry,driveMaterial);direction.set(d.b.x-d.a.x,d.b.y-d.a.y,d.b.z-d.a.z);g.position.set((d.a.x+d.b.x)/2,(d.a.y+d.b.y)/2,(d.a.z+d.b.z)/2);g.scale.y=direction.length();g.quaternion.setFromUnitVectors(yAxis,direction.normalize());g.userData={drive:d};scene.add(g);links.set('drive:'+d.to,g);}
+   for(const d of network.drives){
+    const key='drive:'+d.to,shape=JSON.stringify(d);wanted.add(key);if(links.get(key)?.userData.shape===shape)continue;
+    links.get(key)?.removeFromParent();
+    const g=new THREE.Mesh(driveGeometry,driveMaterial);direction.set(d.b.x-d.a.x,d.b.y-d.a.y,d.b.z-d.a.z);g.position.set((d.a.x+d.b.x)/2,(d.a.y+d.b.y)/2,(d.a.z+d.b.z)/2);g.scale.y=direction.length();g.quaternion.setFromUnitVectors(yAxis,direction.normalize());g.userData={drive:d,shape};scene.add(g);links.set(key,g);
+   }
+   for(const [key,g] of links)if(!wanted.has(key)){if(g.userData.drive)g.removeFromParent();else disposeWaterJoin(g);links.delete(key);}
+
   }
  }
  function ring(p){const q=motion.get(p.id);if(!q||time-q.lastBell<.6)return false;q.lastBell=time;q.amplitude=1;event('bell',{...propAnchor(p,'bell'),propId:p.id,sourceId:'prop:'+p.id,material:DELIGHTS[p.kind].material});return true;}
@@ -55,8 +65,7 @@ export function createDelightSystem({scene,getState,getPlayer,changed,event,cont
   for(const p of props){const q=motion.get(p.id),water=flow.get(p.id);if(water){q.flow=water.flow;q.charge=water.stored;q.spill=water.spill;q.waterReason=network.rejected.find(e=>e.from===p.id||e.to===p.id)?.reason??null;q.waterConnected=network.edges.some(e=>e.from===p.id||e.to===p.id);q.connectedTo=network.edges.find(e=>e.from===p.id)?.to??null;}}
   for(const g of links.values()){
    if(g.userData.drive){const d=g.userData.drive;g.rotateY(dt*(flow.get(d.from)?.flow??0)*4);continue;}
-   const {from,a,b,split,stream,drop}=g.userData,rate=(flow.get(from)?.flow??0)/(split?2:1);g.visible=rate>.005;
-   if(g.visible){const width=Math.sqrt(rate);stream.scale.x=stream.scale.z=width;const u=(time*1.7+from*.13)%1;drop.position.set(a.x+(b.x-a.x)*u,a.y+(b.y-a.y)*u,a.z+(b.z-a.z)*u);drop.scale.setScalar(width);}
+   const {from,split,blocked}=g.userData,rate=blocked?0:(flow.get(from)?.flow??0)/(split?2:1);animateWaterJoin(g,{time,flow:rate});
   }
   // Resolve cross-object responses before animating any object, regardless of placement order.
   for(const p of props)if(p.kind==='lamp'){const q=motion.get(p.id),curtain=nearestProp(p,props,'curtain',3);q.connectedTo=curtain?.id??null;q.glow=p.on?1:0;if(p.on&&curtain)motion.get(curtain.id).glow=1;}
@@ -80,7 +89,7 @@ export function createDelightSystem({scene,getState,getPlayer,changed,event,cont
   const lamps=props.filter(p=>p.kind==='lamp'&&p.on).sort((a,b)=>Math.hypot(a.gx*2-player.x,a.gz*2-player.z)-Math.hypot(b.gx*2-player.x,b.gz*2-player.z));
   lightPool.forEach((l,i)=>{const p=lamps[i];l.intensity=p?.on ? .65 : 0;if(p){const a=propAnchor(p,'light');l.position.set(a.x,a.y,a.z);}});
  }
- return {models,motion,sync,update,use,pour,anchor,claim,release,visited,ring,
-  waterSnapshot:()=>({...flow.snapshot(),drives:network.drives,rejected:network.rejected,links:links.size}),
+ return {models,motion,links,waterSolids:()=>waterSolids,sync,update,use,pour,anchor,claim,release,visited,ring,
+  waterSnapshot:()=>({...flow.snapshot(),drives:network.drives,rejected:network.rejected,joins:network.joins.map(j=>({key:j.key,kind:j.kind,path:j.path,boxes:j.boxes.length})),links:links.size}),
   snapshot:()=>getState().delights.map(p=>{const q=motion.get(p.id);return {...p,flow:q?.flow??0,powered:q?.powered??false,driveId:q?.driveId??null,spill:q?.spill??0,charge:q?.charge??0,phase:q?.phase??0,swing:q?.swing??0,target:q?.target??p.liftY,blocked:q?.blocked??false,visitorId:q?.visitorId??null,connectedTo:q?.connectedTo??null,seat:p.kind==='hammock'?anchor(p.id,'seat'):null,platform:p.kind==='lift'?anchor(p.id,'platform'):null};})};
 }

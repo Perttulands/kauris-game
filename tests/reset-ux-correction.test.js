@@ -27,7 +27,7 @@ test('object-use target suppresses unrelated shovel and seed refusal while groun
 
 test('far placement preview matches action reach before paid validity and connected success',()=>{
  const main=fs.readFileSync(new URL('../src/main.js',import.meta.url),'utf8'),helper=main.slice(main.indexOf('function placementPreviewResult('),main.indexOf('function placementResult(')),detail=main.slice(main.indexOf('function renderSelectionDetail('),main.indexOf('function toast('));
- const ghost=main.slice(main.indexOf(' const valid=check.ok;'),main.indexOf(' if(connectionGhost){connectionGhost.visible'));
+ const ghost=main.slice(main.indexOf(' const valid=check.ok;'),main.indexOf(' for(const g of joinGhosts)g.visible='));
  for(const far of [false,true])for(const paidOk of [false,true]){
   let paidCalls=0,color;const nodes={selectedDetail:{textContent:''},selection:{dataset:{}}},candidate={kind:'pump',baseY:0,level:0},scope={target:{outOfReach:far},state:{plots:{}},camera:{position:{y:1.7}},farTargetHint:()=> 'target.closer',placementResult:()=>{paidCalls++;return {ok:paidOk,code:paidOk?'message.place':'message.needMaterial',params:{count:8,material:'copper'}};}};
   vm.runInNewContext(helper+';this.check=placementPreviewResult({});',scope);assert.equal(paidCalls,far?0:1);assert.equal(scope.check.ok,!far&&paidOk);if(far)assert.equal(scope.check.code,'target.closer');

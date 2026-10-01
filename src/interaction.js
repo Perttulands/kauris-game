@@ -11,15 +11,18 @@ export function wheelStep(w,delta,mode,now,enabled){
  if(Math.abs(w.sum)<40)return 0;
  const step=Math.sign(w.sum);w.sum=0;w.last=now;return step;
 }
-export function advanceChop(c,key,dt,seconds=1.8){
+// One strike clock for presses and held repeats. Release retains progress;
+// null target cancels progress, but never removes the shared strike cooldown.
+export function advanceChop(c,key,now,seconds=1.8,{held=false,press=false}={}){
  if(!key){c.key=null;c.elapsed=0;c.impacts=0;c.done=false;return {progress:0,impact:false,complete:false};}
  if(c.key!==key){c.key=key;c.elapsed=0;c.impacts=0;c.done=false;}
- if(c.done)return {progress:1,impact:false,complete:false};
- c.elapsed=Math.min(seconds,c.elapsed+Math.max(0,Math.min(dt,.1)));
- const impacts=Math.floor((c.elapsed+1e-8)/(seconds/(seconds<1?1:3)));
- const impact=impacts>c.impacts;c.impacts=impacts;
- const complete=c.elapsed+1e-8>=seconds;c.done=complete;
- return {progress:Math.min(1,c.elapsed/seconds),impact,complete};
+ const count=seconds<1?1:3,cadence=seconds/count;
+ let impact=false,complete=false;
+ if(!c.done&&(press||held)&&now+1e-8>=(c.nextAt??-Infinity)){
+  c.nextAt=now+cadence;c.impacts++;c.elapsed=c.impacts*cadence;
+  impact=true;complete=c.impacts>=count;c.done=complete;
+ }
+ return {progress:Math.min(1,c.impacts/count),impact,complete};
 }
 
 // Bare ground has no fixed destination: walking preserves a shallow ray's distance.

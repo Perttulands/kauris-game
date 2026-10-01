@@ -1,3 +1,4 @@
+import {waterReservations} from './water-connections.js';
 import {plantVolume} from './cultivation.js';
 import {readHome} from './home.js';
 import {activeDiscoveries,seedUnlocked,plantVariation,readGarden} from './garden.js';
@@ -86,6 +87,8 @@ export function validatePlant(s,gx,gz,seed){
  if(!p||p.phase!=='hole')return no('message.shovelFirst');
  if(p.seed)return no('message.seedAlready');
  if(SEEDS[seed].aquatic&&!submergedPlot(p))return no('message.seaSeedWater');
+ const futureWater=plantVolume({...p,seed},{reserve:true});
+ if(waterReservations(s).some(b=>boxesOverlap(futureWater,b,.001)))return no('message.clearGround');
  if(submergedPlot(p)){
   const future=plantVolume({...p,seed},{reserve:true});
   if([...s.buildings.flatMap(buildingBoxes),...s.delights.flatMap(q=>propBoxes(q))].some(b=>boxesOverlap(future,b,.001)))return no('message.clearGround');
@@ -133,6 +136,7 @@ export function validateBuild(s,b,{legacy=false,graph=null}={}){
  if(s.buildings.some(x=>piecesOverlap(x,b)))return no('message.occupied');
  if(!(graph??supportedPieces([...s.buildings,b],s)).has(b))return no(b.kind==='roof'?'message.roofSupport':b.kind==='floor'?'message.floorSupport':'message.floorFirst');
  if(s.inventory[b.material]<PIECES[b.kind].cost)return no('message.needMaterial',{count:PIECES[b.kind].cost,material:b.material});
+ if(waterReservations(s).some(a=>buildingBoxes(b).some(q=>boxesOverlap(a,q,.001))))return no('message.toyClearance');
  return ok('message.place');
 }
 export function build(s,b){

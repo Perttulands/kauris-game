@@ -1,3 +1,4 @@
+import {describeWaterNetwork,waterReservations} from './water-connections.js';
 import {plantVolume} from './cultivation.js';
 import {NEW_WATER_TOYS,ADDON_BOXES,pumpIntake,waterPoint} from './water-spec.js';
 // Authoritative paid toy definitions, anchors and physical rules. No renderer/state cycle.
@@ -26,11 +27,11 @@ export function rotateXZ(x,z,rotation){for(let i=0;i<rotation;i++)[x,z]=[z,-x];r
 export function propPoint(p,point){const [x,z]=rotateXZ(point[0],point[2],p.rotation);return {x:p.gx*2+x,y:p.baseY+point[1],z:p.gz*2+z};}
 export function propAnchor(p,name){return propPoint(p,DELIGHTS[p.kind].anchors[name]??[0,0,0]);}
 function worldBox(p,b){const corners=[[b.minX,b.minZ],[b.minX,b.maxZ],[b.maxX,b.minZ],[b.maxX,b.maxZ]].map(([x,z])=>rotateXZ(x,z,p.rotation));return {minX:p.gx*2+Math.min(...corners.map(c=>c[0])),maxX:p.gx*2+Math.max(...corners.map(c=>c[0])),minZ:p.gz*2+Math.min(...corners.map(c=>c[1])),maxZ:p.gz*2+Math.max(...corners.map(c=>c[1])),minY:p.baseY+b.minY,maxY:p.baseY+b.maxY};}
-export function propBoxes(p,{reserve=false,envelope=false,liftY=p.liftY??0}={}){
+export function propBoxes(p,{reserve=false,envelope=false,liftY=p.liftY??0,includeIntake=true}={}){
  const spec=DELIGHTS[p.kind];if(!spec)return [];
  if(reserve)return [worldBox(p,box(-.98,.98,0,spec.size[1],-.98,.98))];
- if(envelope)return [worldBox(p,box(-spec.size[0]/2,spec.size[0]/2,0,spec.size[1],-spec.size[2]/2,spec.size[2]/2)),...[...ADDON_BOXES[p.kind]??[],...p.kind==='pump'?pumpIntake(p).boxes:[]].map(b=>worldBox(p,b))];
- const parts=[...spec.boxes,...ADDON_BOXES[p.kind]??[],...p.kind==='pump'?pumpIntake(p).boxes:[]];if(p.kind==='lift')parts.push({...spec.platform,minY:spec.platform.minY+liftY,maxY:spec.platform.maxY+liftY});return parts.map(b=>worldBox(p,b));
+ if(envelope)return [worldBox(p,box(-spec.size[0]/2,spec.size[0]/2,0,spec.size[1],-spec.size[2]/2,spec.size[2]/2)),...[...ADDON_BOXES[p.kind]??[],...includeIntake&&p.kind==='pump'?pumpIntake(p).boxes:[]].map(b=>worldBox(p,b))];
+ const parts=[...spec.boxes,...ADDON_BOXES[p.kind]??[],...includeIntake&&p.kind==='pump'?pumpIntake(p).boxes:[]];if(p.kind==='lift')parts.push({...spec.platform,minY:spec.platform.minY+liftY,maxY:spec.platform.maxY+liftY});return parts.map(b=>worldBox(p,b));
 }
 export const boxesOverlap=(a,b,margin=0)=>a.minX<b.maxX-margin&&a.maxX>b.minX+margin&&a.minZ<b.maxZ-margin&&a.maxZ>b.minZ+margin&&a.minY<b.maxY-margin&&a.maxY>b.minY+margin;
 export function naturalPropBase(kind,gx,gz){
@@ -72,6 +73,12 @@ export function validateDelight(s,p,{legacy=false}={}){
   }
  }
  for(const b of s.buildings){if(b.id===p.hostId)continue;if(propBoxes(p,{envelope:true}).some(a=>buildingBoxes(b).some(c=>boxesOverlap(a,c,.001))))return no('message.toyClearance');}
+ if(!legacy){
+  if(waterReservations(s).some(a=>propBoxes(p).some(b=>boxesOverlap(a,b,.001))))return no('message.toyClearance');
+  const id=Math.max(s.nextDelightId??1,Math.max(0,...s.delights.map(q=>q.id))+1),next={...s,delights:[...s.delights,{...p,id,on:true}]},plan=describeWaterNetwork(next);
+  if(p.kind==='pump'&&!plan.nodes.find(n=>n.id===id)?.sourceValid)return no('message.pumpBlocked');
+  if(plan.rejected.some(e=>e.reason==='blocked'&&(e.from===id||e.to===id)))return no('message.toyClearance');
+ }
  if(s.inventory[spec.material]<spec.cost)return result(false,'message.needMaterial',{count:spec.cost,material:spec.material});
  return result(true,'message.place');
 }

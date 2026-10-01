@@ -1,3 +1,4 @@
+import {createCrabShelterVisits} from './crab-shelter-visits.js';
 import {TERRAIN,terrainHeight} from './terrain.js';
 import {solidInterval} from './reef-collision.js';
 import {propBoxes,propAnchor} from './delights.js';
@@ -117,31 +118,14 @@ export function createMarineLife({profiles,reefSolids=[],buildings=[],solidsAt=(
   move(a,Math.sin(a.yaw)*speed,vy,Math.cos(a.yaw)*speed,dt);
   if(a.swims){a.pitch+=(clamp(-Math.atan2(vy,Math.max(.1,a.speed)),-.16,.16)-a.pitch)*Math.min(1,dt*2);a.roll+=(-a.turn*(a.kind==='turtle'?.16:.12)-a.roll)*Math.min(1,dt*3);}
  }
- function shelterPath(a,p,target){
-  // A short cove-only visibility graph around this shelter and nearby body, not world navigation.
-  const nodes=[{x:a.x,z:a.z},target,...[[2,2],[2,-2],[-2,2],[-2,-2],[0,2.4],[2.4,0],[-2.4,0],[0,-2.4]].map(([x,z])=>({x:p.gx*2+x,z:p.gz*2+z})),...[[-1.5,0],[1.5,0],[0,1.5],[0,-1.5],[0,3],[0,-3],[-1.5,3],[1.5,3],[-3,0],[3,0]].map(([x,z])=>({x:a.x+x,z:a.z+z}))];
-  const clear=(u,v)=>{const n=Math.ceil(Math.hypot(v.x-u.x,v.z-u.z)/.1);for(let i=1;i<=n;i++){const x=u.x+(v.x-u.x)*i/n,z=u.z+(v.z-u.z)*i/n;if(!clearAt(a,x,terrainHeight(x,z)+.008,z))return false;}return true;};
-  const queue=[0],parent=new Map([[0,-1]]);for(const i of queue){for(let j=1;j<nodes.length;j++){if(parent.has(j)||!clear(nodes[i],nodes[j]))continue;parent.set(j,i);if(j===1){const path=[];for(let k=1;k!==0;k=parent.get(k))path.unshift(nodes[k]);return path;}queue.push(j);}}return [];
- }
- function visitShelter(a,dt){
-  if(a.index!==2||time<(a.homeCooldown??0))return false;
-  let p=props.find(p=>p.id===a.shelterId&&p.kind==='crabShelter');
-  if(!p){toys?.release(a.id);a.shelterId=null;a.visitStage=0;p=props.filter(p=>p.kind==='crabShelter'&&Math.hypot(p.gx*2-a.x,p.gz*2-a.z)<20).sort((p,q)=>Math.hypot(p.gx*2-a.x,p.gz*2-a.z)-Math.hypot(q.gx*2-a.x,q.gz*2-a.z)).find(p=>toys?.claim(p.id,a.id));if(p)a.shelterId=p.id;}
-  if(!p)return false;
-  const greeting=(a.greetUntil??0)>time,stage=a.visitStage??0;
-  const goal=stage===3?{x:a.homeX,z:a.homeZ}:propAnchor(p,stage===0||stage===2?'entry':'inside');
-  if(!a.homePath||a.speed<.005&&time>(a.homeRetry??0)){a.homeRetry=time+2;a.homePath=shelterPath(a,p,goal);}
-  if(!a.homePath.length){a.speed=0;a.activity='idle';return true;}
-  let target=a.homePath[0];if(Math.hypot(target.x-a.x,target.z-a.z)<.04&&a.homePath?.length>1){a.homePath.shift();target=a.homePath[0];}
-  const dx=target.x-a.x,dz=target.z-a.z,d=Math.hypot(dx,dz);
-  if(greeting){a.activity='alert';a.speed=0;return true;}
-  if(d>.045){a.activity='move';a.yaw=Math.atan2(-dz,dx);move(a,dx/d*Math.min(.3,d/dt),0,dz/d*Math.min(.3,d/dt),dt);a.activity=a.speed>.01?'move':'idle';}
-  else if(stage===0){a.visitStage=1;a.speed=0;a.homePath=null;}
-  else if(stage===1){a.activity=Math.sin(time*.4)>.5?'forage':'idle';a.speed=0;a.yaw=p.rotation*Math.PI/2;toys?.visited(p.id);a.stayTime=(a.stayTime??0)+dt;if(a.stayTime>12){a.visitStage=2;a.stayTime=0;a.homePath=null;}}
-  else if(stage===2){a.visitStage=3;a.homePath=null;}
-  else {toys?.release(a.id);a.shelterId=null;a.visitStage=0;a.homePath=null;a.homeCooldown=time+30;}
-  return true;
- }
+ const shelterVisits=createCrabShelterVisits({
+  getShelters:()=>props.map(p=>({...p,requestUntil:toys?.motion?.get(p.id)?.request??0,visitorId:toys?.motion?.get(p.id)?.visitorId??null})),
+  anchor:propAnchor,claim:(id,actor)=>toys?.claim(id,actor)??false,
+  release:actor=>toys?.release(actor),visited:id=>toys?.visited(id),
+  groundY:(_a,x,z)=>terrainHeight(x,z)+.008,
+  canTravel:(a,from,to)=>{const n=Math.max(1,Math.ceil(Math.hypot(to.x-from.x,to.z-from.z)/.1));for(let i=0;i<=n;i++){const x=from.x+(to.x-from.x)*i/n,z=from.z+(to.z-from.z)*i/n;if(!clearAt(a,x,terrainHeight(x,z)+.008,z))return false;}return true;},
+  move:(a,target,dt)=>{const dx=target.x-a.x,dz=target.z-a.z,d=Math.hypot(dx,dz);if(d>0){const speed=Math.min(.65,d/dt);move(a,dx/d*speed,0,dz/d*speed,dt);}}
+ });
  function setWindows(next){
   const homes=findHomes(next);windows=[];
   for(const b of next)if(b.material==='diamond'&&b.kind==='window'&&b.level===0&&baseOf(b)<-1){
@@ -163,7 +147,7 @@ export function createMarineLife({profiles,reefSolids=[],buildings=[],solidsAt=(
    if(still(a.kind)){a.activity='idle';a.phase+=dt*.07;continue;}
    const near=player&&Math.hypot(player.x-a.x,player.y-a.y,player.z-a.z)<1.6;
    if(a.kind==='crab'){
-    if(visitShelter(a,dt))continue;
+    if(shelterVisits.update(a,dt,time))continue;
     const cycle=(time+a.index*4.1)%16;
     a.activity=near?'alert':cycle<5?'forage':cycle<7?'idle':'move';
     if(a.activity==='move'){

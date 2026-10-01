@@ -1,3 +1,4 @@
+import {createCrabShelterVisits} from './crab-shelter-visits.js';
 import {createMarineAnimal,animateMarineAnimal,MARINE_PROFILES} from './marine-visuals.js';
 import {createAnimal,animateAnimal} from './garden-visuals.js';
 import {nearbyChunks} from './world-data.js';
@@ -5,11 +6,11 @@ import {sampleWorld} from './world-layout.js';
 import {TERRAIN} from './terrain.js';
 import {solidInterval} from './reef-collision.js';
 import {buildingBoxes,touches} from './building.js';
-import {propBoxes} from './delights.js';
+import {propBoxes,propAnchor} from './delights.js';
 import {SEA_LIMITS} from './sea-habitats.js';
 
 // Transient bounded populations, stable through chunk/quality changes.
-export function createOuterLife({scene,state,solidsAt}){
+export function createOuterLife({scene,state,solidsAt,getDelights=()=>null}){
  const actors=new Map(),retryAfter=new Map(),omitted=new Map();let time=0,observed=[];
  const kindOf=m=>m.kind.slice(8);
  function clear(a,x,y,z){
@@ -22,11 +23,19 @@ export function createOuterLife({scene,state,solidsAt}){
   return ![...actors.values()].some(b=>b!==a&&Math.abs(b.y-y)<.6&&Math.hypot(b.x-x,b.z-z)<r+b.profile.radius+.04);
  }
  function rootY(a,x,z){const h=sampleWorld(x,z).height;return a.kind==='crab'?h:a.kind==='fish'?Math.min(TERRAIN.waterY-.6,Math.max(TERRAIN.waterY-1.1,h+.7)):h+2.2+Math.sin(time*.8+a.home.variant)*.18;}
- function retire(a){scene.remove(a.model);const skeletons=new Set();a.model.traverse(o=>{if(o.isSkinnedMesh&&o.skeleton)skeletons.add(o.skeleton);});for(const skeleton of skeletons)skeleton.dispose();for(const {material} of a.fade)material.dispose();actors.delete(a.id);}
+ const shelterVisits=createCrabShelterVisits({
+  getShelters:()=>state.delights.map(p=>({...p,requestUntil:getDelights()?.motion?.get(p.id)?.request??0,visitorId:getDelights()?.motion?.get(p.id)?.visitorId??null})),
+  anchor:propAnchor,claim:(id,actor)=>getDelights()?.claim(id,actor)??false,
+  release:actor=>getDelights()?.release(actor),visited:id=>getDelights()?.visited(id),
+  groundY:(_a,x,z)=>sampleWorld(x,z).height,
+  canTravel:(a,from,to)=>{const n=Math.max(1,Math.ceil(Math.hypot(to.x-from.x,to.z-from.z)/.1));for(let i=0;i<=n;i++){const x=from.x+(to.x-from.x)*i/n,z=from.z+(to.z-from.z)*i/n;if(!clear(a,x,rootY(a,x,z),z))return false;}return true;},
+  move:(a,target,dt)=>{const dx=target.x-a.x,dz=target.z-a.z,d=Math.hypot(dx,dz),step=Math.min(d,dt*.65),n=Math.max(1,Math.ceil(step/.08)),ox=a.x,oz=a.z;for(let i=1;i<=n&&d>0;i++){const x=ox+dx/d*step*i/n,z=oz+dz/d*step*i/n,y=rootY(a,x,z);if(!clear(a,x,y,z))break;Object.assign(a,{x,y,z});}a.speed=Math.hypot(a.x-ox,a.z-oz)/dt;}
+ });
+ function retire(a){shelterVisits.release(a.id);scene.remove(a.model);const skeletons=new Set();a.model.traverse(o=>{if(o.isSkinnedMesh&&o.skeleton)skeletons.add(o.skeleton);});for(const skeleton of skeletons)skeleton.dispose();for(const {material} of a.fade)material.dispose();actors.delete(a.id);}
  function admit(m,index){
   const kind=kindOf(m),profile=kind==='bird'?{radius:.5,minY:-.07,maxY:.42}:MARINE_PROFILES[kind];
   if(!profile)return false;
-  const a={id:index?m.id+':'+index:m.id,kind,home:m,profile,index,x:m.x,z:m.z,y:0,yaw:m.yaw,phase:index*.21,speed:0,activity:'idle',born:time,fade:[]};
+  const a={id:index?m.id+':'+index:m.id,kind,home:m,homeX:m.x,homeZ:m.z,profile,index,x:m.x,z:m.z,y:0,yaw:m.yaw,phase:index*.21,speed:0,activity:'idle',born:time,fade:[]};
   const ox=kind==='fish'?(index%2?1:-1)*.65:0,oz=kind==='fish'?(index>1?.65:-.65):0;
   let found=false;
   for(let i=0;i<25&&!found;i++){
@@ -57,11 +66,15 @@ export function createOuterLife({scene,state,solidsAt}){
    if(!added){retryAfter.set(m.id,time+5);omitted.set(m.id,'clearance');}else omitted.delete(m.id);
   }
   for(const a of actors.values()){
+   const origin={x:a.x,z:a.z},visiting=a.kind==='crab'&&shelterVisits.update(a,dt,time);
+   if(!visiting){
    const m=a.home,pause=a.kind==='crab'&&(time+m.variant)%15>10,r=a.kind==='crab'?.7:a.kind==='fish'?1.8:2.8,rate=a.kind==='crab'?.09:a.kind==='fish'?.17:.4,t=time*rate+m.variant*2;
    const ox=a.kind==='fish'?(a.index%2?1:-1)*.65:0,oz=a.kind==='fish'?(a.index>1?.65:-.65):0;
    const tx=m.x+Math.cos(t)*r+ox,tz=m.z+Math.sin(t)*r+oz,dx=tx-a.x,dz=tz-a.z,d=Math.hypot(dx,dz),step=Math.min(d,dt*(pause?0:a.kind==='crab'?.2:a.kind==='fish'?.6:1.2)),x=a.x+dx/Math.max(d,.001)*step,z=a.z+dz/Math.max(d,.001)*step,wantedY=rootY(a,x,z),y=a.kind==='crab'?wantedY:a.y+Math.max(-dt*.4,Math.min(dt*.4,wantedY-a.y));let moved=0;
    if(clear(a,x,y,z)){moved=Math.hypot(x-a.x,z-a.z);if(moved>.00001)a.yaw=a.kind==='crab'?Math.atan2(-(z-a.z),x-a.x):Math.atan2(x-a.x,z-a.z);Object.assign(a,{x,y,z});}
-   a.speed=moved/Math.max(dt,.001);a.activity=a.speed>.015?'travel':'idle';a.phase+=a.kind==='crab'?moved/a.profile.stride:dt*(.3+a.speed*2.3);
+   a.speed=moved/Math.max(dt,.001);a.activity=a.speed>.015?'travel':'idle';
+   }
+   a.phase+=a.kind==='crab'?Math.hypot(a.x-origin.x,a.z-origin.z)/a.profile.stride:dt*(.3+a.speed*2.3);
    const fade=Math.min(1,(time-a.born)/.8);for(const f of a.fade){f.material.opacity=f.opacity*fade;f.material.transparent=fade<1||f.transparent;}
    a.model.visible=true;a.model.position.set(a.x,a.y,a.z);a.model.rotation.y=a.yaw;
    if(a.kind==='bird')animateAnimal(a.model,{time,walk:a.speed>0?1:0,perch:0});else animateMarineAnimal(a.model,{time,dt,speed:a.speed,turn:0,activity:a.activity,phase:a.phase});a.model.updateMatrixWorld(true);

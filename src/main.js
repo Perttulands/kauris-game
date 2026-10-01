@@ -1,3 +1,4 @@
+import {createWaterJoin,disposeWaterJoin} from './water-join-visuals.js';
 import {createWaterFlow} from './water-flow.js';
 import {WATER_PORTS,pumpIntake} from './water-spec.js';
 import {describeWaterNetwork,waterPorts} from './water-connections.js';
@@ -10,6 +11,7 @@ import * as THREE from 'three';
 import {homeChoice,safeHomeDestination} from './home.js';
 import {plotStage,houseNeed} from './readable-state.js';
 import {assistedPlacement} from './placement.js';
+import {standingPlacement} from './standing-placement.js';
 import {createQuality,readDisplay,SETTINGS_KEY,frameDelta} from './quality.js';
 import {createReadableWorld} from './readable-visuals.js';
 const boot=window.kaurisBoot;
@@ -26,6 +28,7 @@ import {createPictures} from './previews.js';
 import {icon} from './icons.js';
 import {findHomes,houseReadiness} from './residents.js';
 import {createResidentSystem} from './resident-runtime.js';
+import {residentOutingTargets} from './resident-outing-targets.js';
 import {activeDiscoveries,seedUnlocked,isFlower,setOutfit} from './garden.js';
 import {createGardenSystem} from './garden-runtime.js';
 import {actionEcho,admitFailure} from './action-feedback.js';
@@ -76,10 +79,11 @@ await yieldBoot();
 const world=measureBoot('landmarks',()=>createLandmarks({occupiedCells:[...Object.values(state.plots),...state.buildings,...activeDiscoveries(state).flatMap(d=>{const cells=[];for(let gx=Math.floor(d.bounds.minX/2);gx<=Math.ceil(d.bounds.maxX/2);gx++)for(let gz=Math.floor(d.bounds.minZ/2);gz<=Math.ceil(d.bounds.maxZ/2);gz++)cells.push({gx,gz});return cells;})],hiddenLandmarks:state.worldHidden}));scene.add(world.group);
 await yieldBoot();
 const ocean=measureBoot('ocean',()=>createOceanWorld({terrain:TERRAIN,heightAt:terrainHeight}));scene.add(ocean);const reefSolids=ocean.userData.reefSolids,oceanBounds=new THREE.Box3().setFromObject(ocean);
-const worldRuntime=createWorldRuntime(state);scene.add(worldRuntime.group);const outerLife=createOuterLife({scene,state,solidsAt:(x,z)=>[...worldRuntime.solidsAt(x,z),...submergedPlantSolids(state,x,z)]});
+let residents,delights;
+const worldRuntime=createWorldRuntime(state);scene.add(worldRuntime.group);const outerLife=createOuterLife({scene,state,getDelights:()=>delights,solidsAt:(x,z)=>[...worldRuntime.solidsAt(x,z),...submergedPlantSolids(state,x,z),...(delights?.waterSolids?.()??[])]});
 await yieldBoot();
 const seaLight=new THREE.HemisphereLight('#b5eee5','#27616a',.65);seaLight.position.set(0,0,52);scene.add(seaLight);
-const marineLife=createMarineLife({profiles:MARINE_PROFILES,reefSolids,buildings:state.buildings,solidsAt:(x,z)=>[...worldRuntime.solidsAt(x,z),...submergedPlantSolids(state,x,z)]});
+const marineLife=createMarineLife({profiles:MARINE_PROFILES,reefSolids,buildings:state.buildings,solidsAt:(x,z)=>[...worldRuntime.solidsAt(x,z),...submergedPlantSolids(state,x,z),...(delights?.waterSolids?.()??[])]});
 await yieldBoot();
 const marine=marineLife.animals.map(actor=>{const model=createMarineAnimal(actor.kind,actor.variant);model.rotation.order='YXZ';scene.add(model);return {actor,model};});
 function poseMarine(dt=0){for(const {actor:a,model} of marine){model.position.set(a.x,a.y,a.z);model.rotation.set(a.pitch,a.yaw,a.roll,'YXZ');animateMarineAnimal(model,{time:marineLife.time,dt,speed:a.speed,turn:a.turn,activity:a.activity,phase:a.phase});model.updateMatrixWorld(true);}}
@@ -98,6 +102,8 @@ const tools=[{key:'shovel',name:'Dig',icon:'♧'},{key:'seed',name:'Seeds',icon:
 let fallbackLook=false,rightDrag=false,runtimeReady=false,pendingStart=false;
 let homeStatusKey='',homeStatusTimer;
 let frameHandle=0,previous=null,qualityWarmUntil=0,homeHeld=0,homeAnchor=null,cueNeed=null,cueNeedKey='',cueNeedUntil=0,placementQuery=null,houseInfoKey='',houseInfo=null;
+const joinGhostMaterial=new THREE.MeshBasicMaterial({color:'#d8f5a5',transparent:true,opacity:.4,depthWrite:false});let joinGhostKey='',joinGhosts=[];
+function clearJoinGhosts(){for(const g of joinGhosts)disposeWaterJoin(g);joinGhosts=[];joinGhostKey='';}
 let tool=0,seedIndex=0,pieceIndex=0,materialIndex=0,rotation=0,level=0,levelExplicit=false,toolMesh,preview,connectionGhost,previewPumpKey='',connectionPreviewKey='',connectionPreview=null;
 const seedKeys=Object.keys(SEEDS),pieceKeys=[...Object.keys(PIECES),...DELIGHT_KEYS];
 const isToy=()=>Object.hasOwn(DELIGHTS,pieceKeys[pieceIndex]);
@@ -108,9 +114,10 @@ const waterPositions=new Float32Array(28*3),waterGeometry=new THREE.BufferGeomet
 const dropCanvas=document.createElement('canvas');dropCanvas.width=dropCanvas.height=32;const dc=dropCanvas.getContext('2d'),dg=dc.createRadialGradient(16,16,1,16,16,15);dg.addColorStop(0,'#ffffff');dg.addColorStop(.45,'#ffffffdd');dg.addColorStop(1,'#ffffff00');dc.fillStyle=dg;dc.fillRect(0,0,32,32);
 const stream=new THREE.Points(waterGeometry,new THREE.PointsMaterial({color:'#c5faff',size:.024,map:new THREE.CanvasTexture(dropCanvas),transparent:true,opacity:.85,depthWrite:false}));stream.frustumCulled=false;stream.visible=false;scene.add(stream);
 const sparks=[],falling=[];const audio=createAudio(),waterAudio=createWaterAudio(),movementAudio=createMovementAudio((kind,options)=>audio.play(kind,options));const whale=createWhaleSystem({scene,paidSolids:()=>[...state.buildings.flatMap(boxes),...state.delights.flatMap(p=>propBoxes(p)),...Object.values(state.plots).filter(p=>p.seed&&submergedPlot(p)).map(p=>plantVolume(p,{reserve:true}))],solidsAt:(x,z)=>physicalSolids(x,z),event:(kind,p)=>audio.play(kind,{...p,sourceId:'whale:0'})});let garden;let outfitResident=null;let nearestFriend=null;
-let residents,delights,pourWeight=0,swimHudMode=null,nextBirdCall=15;
+let pourWeight=0,swimHudMode=null,nextBirdCall=15;
 const chop={},wheel={};let chopProgress=0,totalImpacts=0,rewardUntil=0,lastCue="",timedEcho=null,selectionDetail="",lastFailure=null;const failureMemory={};
-function resetActions(){movementAudio.reset();audio.setContinuous('player:water','water',{active:false});held=false;advanceChop(chop,null,0);chopProgress=0;wheelStep(wheel,0,0,0,false);}
+function releaseActions(){movementAudio.reset();audio.setContinuous('player:water','water',{active:false});held=false;}
+function resetActions(){releaseActions();advanceChop(chop,null,performance.now()/1000);chopProgress=0;wheelStep(wheel,0,0,0,false);}
 let lastReward=null,lastToast=null,saveStatusKey='ui.saved';
 function failure(result){const key=target?(target.propId??target.buildId??target.wildId??cellKey(target.gx,target.gz)):'none';if(!admitFailure(failureMemory,result.code,key,elapsed))return;lastFailure={result,until:elapsed+2.5};renderSelectionDetail();}
 function renderSelectionDetail(){const failed=locked&&lastFailure&&elapsed<lastFailure.until,text=failed?i18n.message(lastFailure.result):locked&&tool===5&&placementQuery&&!placementQuery.validation.ok?i18n.message(placementQuery.validation):locked&&tool===5&&placementQuery?t('ui.buildCost',{count:(DELIGHTS[pieceKeys[pieceIndex]]??PIECES[pieceKeys[pieceIndex]]).cost,material:t('material.'+(isToy()?DELIGHTS[pieceKeys[pieceIndex]].material:MATERIALS[materialIndex])),level:placementQuery.candidate.level??0}):locked&&tool<5&&target?.propId?toyHint(state.delights.find(p=>p.id===target.propId))||selectionDetail:selectionDetail;const detail=text+(locked&&tool===5&&placementQuery?.validation.ok&&placementQuery.connection?' · '+t(placementQuery.connection):'');if($('selectedDetail').textContent!==detail)$('selectedDetail').textContent=detail;$('selection').dataset.failure=String(!!failed);}
@@ -122,9 +129,10 @@ function save(){
  try{localStorage.setItem(SAVE_KEY,serialize(state));saveStatus(fallbackLook?'ui.savedFallback':'ui.saved');dirty=false;}catch{saveStatus('ui.saveUnavailable');}
 }
 function sync(){
+ connectionPreviewKey='';
  const choice=homeChoice(state);if(JSON.stringify(choice.record)!==JSON.stringify(state.home)){state.home=choice.record;dirty=true;}
  const safe=safeHomeDestination(state,homeEnvironment());homeAnchor=safe.ok?{x:safe.x,y:safe.feet,z:safe.z}:null;cueNeedKey='';houseInfoKey='';
- residents?.sync();garden?.sync();delights?.sync();marineLife.setBuildings(state.buildings);marineLife.setDelights(state.delights,delights);worldRuntime.sync();
+ worldRuntime.sync();residents?.sync();garden?.sync();delights?.sync();marineLife.setBuildings(state.buildings);marineLife.setDelights(state.delights,delights);
  syncWild();
 
 
@@ -140,7 +148,7 @@ function sync(){
  refreshInteractive();updateHUD();
 }
 let worldVersion=-1,wildCell='',visibleWild=[],resourceView={x:pos.x,z:pos.z};
-function refreshInteractive(){interactive=[plotsGroup,...worldRuntime.roots(),...plantMeshes.values(),...wildMeshes.values(),...buildMeshes.values(),...delights.models.values()];}
+function refreshInteractive(){interactive=[plotsGroup,...worldRuntime.roots(),...plantMeshes.values(),...wildMeshes.values(),...buildMeshes.values(),...delights.models.values(),...delights.links.values()];}
 function syncWild(limit=Infinity){
  resourceView={x:pos.x,z:pos.z};
  visibleWild=fullResourceCandidates(state,pos.x,pos.z);
@@ -150,7 +158,8 @@ function syncWild(limit=Infinity){
  }
  resourceHorizon.update(state,pos.x,pos.z,new Set(visibleWild.map(r=>r.id)));refreshInteractive();return visibleWild.some(r=>!wildMeshes.has(r.id));
 }
-function physicalSolids(x,z){return [...reefSolids,...worldRuntime.solidsAt(x,z)];}
+function naturalSolids(x,z){return [...reefSolids,...worldRuntime.solidsAt(x,z)];}
+function physicalSolids(x,z){return [...naturalSolids(x,z),...(delights?.waterSolids?.()??[])];}
 function selectedBuild(){
  if(!target)return null;
  let gx=target.gx,gz=target.gz;const kind=pieceKeys[pieceIndex];
@@ -184,7 +193,7 @@ function residentFloor(x,z,baseY=0){return state.buildings.some(b=>b.kind==='flo
 function floorAt(x,z){let f=surfaceAt(state,x,z).floor;
  for(const b of state.buildings)if(b.kind==='floor'||b.kind==='roof')for(const a of boxes(b))if(touches(a,x,z,.1)&&a.maxY<=feet+.31)f=Math.max(f,a.maxY);return propFloor(state.delights,x,z,feet,reefFloor(physicalSolids(x,z),x,z,feet,f));}
 function placeTool(){if(toolMesh)toolMesh.position.set(Math.min(.43,Math.tan(camera.fov*Math.PI/360)*.72*camera.aspect*(camera.aspect<1?.4:.76)),camera.aspect<1?-.31:-.42,-.72);}
-function chooseTool(i){previewPumpKey='';connectionPreviewKey='';connectionPreview=null;if(connectionGhost){scene.remove(connectionGhost);connectionGhost.traverse(o=>{if(o.material)o.material.dispose();});connectionGhost=null;}resetActions();timedEcho=null;lastFailure=null;tool=i;swing=0;if(toolMesh)camera.remove(toolMesh);toolMesh=createTool(tools[i].key);toolMesh.scale.setScalar(i===3?.38:.55);placeTool();toolMesh.rotation.set(-.12,-.22,-.08);camera.add(toolMesh);if(preview){scene.remove(preview);disposeDelight(preview);preview.traverse(o=>{if(o.isMesh)o.material.dispose();});preview=null;}if(tool===5){preview=isToy()?createDelight(pieceKeys[pieceIndex]):createBuildPiece(pieceKeys[pieceIndex],MATERIALS[materialIndex]);preview.traverse(o=>{if(o.isMesh){o.material=new THREE.MeshBasicMaterial({color:'#e1f4a9',transparent:true,opacity:.4,depthWrite:false});o.castShadow=false;}});scene.add(preview);if(WATER_PORTS[pieceKeys[pieceIndex]]){
+function chooseTool(i){clearJoinGhosts();previewPumpKey='';connectionPreviewKey='';connectionPreview=null;if(connectionGhost){scene.remove(connectionGhost);connectionGhost.traverse(o=>{if(o.material)o.material.dispose();});connectionGhost=null;}resetActions();timedEcho=null;lastFailure=null;tool=i;swing=0;if(toolMesh)camera.remove(toolMesh);toolMesh=createTool(tools[i].key);toolMesh.scale.setScalar(i===3?.38:.55);placeTool();toolMesh.rotation.set(-.12,-.22,-.08);camera.add(toolMesh);if(preview){scene.remove(preview);disposeDelight(preview);preview.traverse(o=>{if(o.isMesh)o.material.dispose();});preview=null;}if(tool===5){preview=isToy()?createDelight(pieceKeys[pieceIndex]):createBuildPiece(pieceKeys[pieceIndex],MATERIALS[materialIndex]);preview.traverse(o=>{if(o.isMesh){o.material=new THREE.MeshBasicMaterial({color:'#e1f4a9',transparent:true,opacity:.4,depthWrite:false});o.castShadow=false;}});scene.add(preview);if(WATER_PORTS[pieceKeys[pieceIndex]]){
  connectionGhost=new THREE.Group();
  const p={kind:pieceKeys[pieceIndex],gx:0,gz:0,baseY:0,rotation:0};
  for(const port of waterPorts(p)){
@@ -373,7 +382,7 @@ document.addEventListener('keydown',e=>{
 });
 document.addEventListener('keyup',e=>keys.delete(e.code));window.addEventListener('blur',pauseGame);document.addEventListener('visibilitychange',()=>{if(document.hidden)pauseGame();});
 // Focus alone never restarts audio; an actual play gesture does.
-canvas.addEventListener('mousedown',e=>{menuReading=null;document.activeElement?.blur();if(locked)audio.start();if(e.button===2&&locked)rightDrag=true;if(e.button===0&&locked){if(target?.propId&&tool<5){act();held=true;}else{held=true;if(tool!==3&&tool!==4)act();}}});document.addEventListener('mouseup',()=>{resetActions();rightDrag=false;});canvas.addEventListener('contextmenu',e=>e.preventDefault());
+canvas.addEventListener('mousedown',e=>{menuReading=null;document.activeElement?.blur();if(locked)audio.start();if(e.button===2&&locked)rightDrag=true;if(e.button===0&&locked){if(target?.propId&&tool<5){act();held=true;}else{held=true;if(tool!==3)act();}}});document.addEventListener('mouseup',e=>{if(e.button===0)releaseActions();rightDrag=false;});canvas.addEventListener('contextmenu',e=>e.preventDefault());
 document.addEventListener('wheel',e=>{
  const enabled=locked&&!catalogOpen&&!e.target.closest('#catalog');
  const delta=wheelStep(wheel,e.deltaY,e.deltaMode,performance.now(),enabled);
@@ -405,12 +414,15 @@ function pick(){
  }
  if(!isToy())updateFoundation(preview,b,{ghost:true});preview.position.set(b.gx*2,(isToy()?b.baseY:baseOf(b)+b.level*2.4),b.gz*2);preview.rotation.y=b.rotation*Math.PI/2;const check=placementPreviewResult(b);placementQuery={candidate:b,validation:check};
  if(check.ok&&WATER_PORTS[b.kind]){
-  const key=[b.kind,b.gx,b.gz,b.baseY,b.rotation,state.nextDelightId,state.nextId,state.delights.length,state.buildings.length].join(':');
-  if(key!==connectionPreviewKey){connectionPreviewKey=key;const candidate={...b,id:9007199254740000,on:true};connectionPreview=describeWaterNetwork({...state,delights:[...state.delights,candidate]},{solidsAt:physicalSolids});const trial=createWaterFlow().configure(connectionPreview.nodes,connectionPreview.edges);connectionPreview.rejected.push(...trial.rejected);connectionPreview.edges=connectionPreview.edges.filter(e=>trial.edges.some(a=>a.from===e.from&&a.to===e.to&&a.port===e.port));}
+  connectionPreview=waterPlacementPlan(b);
   const id=9007199254740000,reason=connectionPreview?.rejected.find(e=>e.from===id||e.to===id)?.reason;
   placementQuery.connection=reason?'water.'+reason:connectionPreview?.edges.some(e=>e.from===id||e.to===id)||connectionPreview?.drives.some(e=>e.from===id||e.to===id)?'water.connected':'water.unconnected';
  }
+ const ghostPlans=isToy()?waterPlacementPlan(b)?.joins.filter(j=>j.from===9007199254740000||j.to===9007199254740000)??[]:[],ghostKey=JSON.stringify(ghostPlans.map(p=>[p.key,p.kind,p.path]));
+ if(joinGhostKey!==ghostKey){clearJoinGhosts();joinGhostKey=ghostKey;for(const plan of ghostPlans){const g=createWaterJoin(plan);g.traverse(o=>{if(o.isMesh){o.material=joinGhostMaterial;o.castShadow=false;}});scene.add(g);joinGhosts.push(g);}}
+ joinGhostMaterial.color.set(check.ok?'#d8f5a5':'#f49471');
  const valid=check.ok;tileOutline.position.y=baseOf(b)+b.level*2.4+.035;preview.traverse(o=>{if(o.isMesh)o.material.color.set(valid?'#d8f5a5':'#f49471');});}}
+ for(const g of joinGhosts)g.visible=!!target&&locked&&!target.outOfReach&&tool===5;
  if(connectionGhost){connectionGhost.visible=!!target&&locked&&!target.outOfReach;if(target){const b=selectedBuild(),[dx,dz]=rotateXZ(2,0,b.rotation);connectionGhost.position.set(b.gx*2,b.baseY,b.gz*2);connectionGhost.rotation.y=b.rotation*Math.PI/2;}}
 }
 function renderActionEcho(kind,progress,active,complete=false){
@@ -422,6 +434,15 @@ function renderActionEcho(kind,progress,active,complete=false){
 }
 function renderReward(){if(!lastReward)return;$('reward').innerHTML=lastReward.seed?icon('sparkle')+picture('seed:'+lastReward.seed,t('tree.'+lastReward.seed))+icon('check'):icon(lastReward.resource)+`<b>+${lastReward.amount}</b>`;$('reward').setAttribute('aria-label',lastReward.seed?t(lastReward.newSeed?'message.newSeed':'message.secret'):t('message.yield',{material:t('material.'+lastReward.resource),count:lastReward.amount}));}
 function reward(result){lastReward={resource:result.resource,amount:result.amount};renderReward();rewardUntil=elapsed+2.5;$('reward').classList.add('show');}
+function updateChopping(press=false){
+ const plant=target&&state.plots[cellKey(target.gx,target.gz)],wild=target?.wildId&&resourceRecord(target.wildId);
+ const key=locked&&tool===4&&target&&!target.outOfReach&&!target.propId&&(wild||plant?.seed&&plant.growth>=1)?(wild?'wild:'+wild.id:'plot:'+cellKey(target.gx,target.gz)):null;
+ const kind=wild?.kind??plant?.seed,chopping=advanceChop(chop,key,performance.now()/1000,isFlower(kind)?.45:1.8,{held,press});chopProgress=chopping.progress;
+ if(chopping.impact){totalImpacts++;swing=.25;audio.play(isFlower(kind)?'plant':'chop',{sourceId:key,material:SEEDS[kind]?.resource,x:target.gx*2,y:target.baseY??0,z:target.gz*2});burst(target.gx,target.gz,'#cdaa74',target.baseY??0);}
+ if(locked&&(held||press)&&tool===4&&!key&&!target?.propId)failure({code:!target?'target.aim':target.outOfReach?'target.closer':plant?.seed?'message.letGrow':'message.maturePlant'});
+ if(chopping.complete)finishHarvest();
+ return {chopKey:key,chopping};
+}
 function finishHarvest(){
  const r=target.wildId?resourceRecord(target.wildId):null,p=state.plots[cellKey(target.gx,target.gz)],kind=r?.kind??p?.seed;
  const g=r?wildMeshes.get(r.id):plantMeshes.get(cellKey(target.gx,target.gz));
@@ -461,18 +482,48 @@ function placementPreviewResult(b){
  if(target?.outOfReach)return {ok:false,code:farTargetHint(target,state.plots,camera.position.y)};
  return placementResult(b);
 }
+function placementStanding(b,joins=[]){
+ const toy=isToy(),volumes=[...(toy?propBoxes(b):boxes(b)),...joins],supports=toy?(b.kind==='lift'?[volumes.at(-1)]:[]):['floor','roof'].includes(b.kind)?boxes(b,{supports:false}):[];
+ const bodies=[...(residents?.bodies?.()??[]),...outerBodies(),...marineLife.animals.map(a=>({x:a.x,z:a.z,feet:a.y+a.profile.minY,height:a.profile.maxY-a.profile.minY,radius:a.profile.radius}))];
+ const solids=[...physicalSolids(pos.x,pos.z),...state.buildings.flatMap(boxes),...state.delights.flatMap(p=>propBoxes(p)),...Object.values(state.plots).map(plantVolume).filter(Boolean),
+  ...nearbyResources(state,pos.x,pos.z,2).filter(r=>!isFlower(r.kind)).map(r=>({minX:r.gx*2-.6,maxX:r.gx*2+.6,minZ:r.gz*2-.6,maxZ:r.gz*2+.6,minY:r.baseY??0,maxY:Infinity})),
+  ...[...world.colliders??[],...activeDiscoveries(state).flatMap(d=>d.solids)].map(a=>({...a,minY:-Infinity,maxY:a.height}))];
+ return standingPlacement({body:{x:pos.x,z:pos.z,feet,height:1.65,radius:.24},volumes,supports,solids,bodies});
+}
+function waterPlacementPlan(b){
+ if(!WATER_PORTS[b.kind])return null;
+ const key=[b.kind,b.gx,b.gz,b.baseY,b.rotation,b.hostId,state.nextDelightId,state.nextId,state.delights.length,state.buildings.length,worldRuntime.version].join(':');
+ if(key!==connectionPreviewKey){
+  connectionPreviewKey=key;const candidate={...b,id:9007199254740000,on:true};
+  connectionPreview=describeWaterNetwork({...state,delights:[...state.delights,candidate]},{solidsAt:naturalSolids});
+  const trial=createWaterFlow().configure(connectionPreview.nodes,connectionPreview.edges);
+  connectionPreview.rejected.push(...trial.rejected);connectionPreview.edges=connectionPreview.edges.filter(e=>trial.edges.some(a=>a.from===e.from&&a.to===e.to&&a.port===e.port));
+ }
+ return connectionPreview;
+}
 function placementResult(b){
  if(!b)return {ok:false,code:'message.closer'};
  const volumes=isToy()?propBoxes(b,{envelope:true}):boxes(b);if(volumes.length&&Math.min(...volumes.map(a=>Math.hypot(camera.position.x-Math.max(a.minX,Math.min(a.maxX,camera.position.x)),camera.position.y-Math.max(a.minY,Math.min(a.maxY,camera.position.y)),camera.position.z-Math.max(a.minZ,Math.min(a.maxZ,camera.position.z)))))>6)return {ok:false,code:'message.closer'};
+ const waterPlan=isToy()?waterPlacementPlan(b):null,joinBoxes=waterPlan?.joins.filter(j=>j.from===9007199254740000||j.to===9007199254740000).flatMap(j=>j.boxes)??[];volumes.push(...joinBoxes);
+ const standing=placementStanding(b,joinBoxes);if(!standing.ok)return standing;
+ if(waterPlan?.rejected.some(e=>e.reason==='blocked'&&(e.from===9007199254740000||e.to===9007199254740000)))return {ok:false,code:'message.toyClearance'};
+ if(b.kind==='pump'&&waterPlan&&!waterPlan.nodes.find(n=>n.id===9007199254740000)?.sourceValid)return {ok:false,code:'message.pumpBlocked'};
  if(!isToy()){
-  const code=placementClearance(b,{eye:camera.position,bodies:[{x:pos.x,z:pos.z,feet,height:1.65,radius:.24,step:.3},...residents.bodies()],solids:physicalSolids(b.gx*2,b.gz*2)});if(code)return {ok:false,code};
-  return (marineLife.overlapsBuilding(b)||outerBodies().some(a=>volumes.some(b=>touches(b,a.x,a.z,a.radius)&&b.maxY>a.feet&&b.minY<a.feet+a.height)))?{ok:false,code:'message.creatureRoom'}:validateBuild(state,b);
+  const code=placementClearance(b,{eye:camera.position,bodies:residents.bodies(),solids:physicalSolids(b.gx*2,b.gz*2)});if(code)return {ok:false,code};
+  const check=(marineLife.overlapsBuilding(b)||outerBodies().some(a=>volumes.some(b=>touches(b,a.x,a.z,a.radius)&&b.maxY>a.feet&&b.minY<a.feet+a.height)))?{ok:false,code:'message.creatureRoom'}:validateBuild(state,b);
+  return check.ok?{...check,landingFeet:standing.landingFeet}:check;
  }
  const check=validateDelight(state,b);if(!check.ok)return check;
- if(liftBodies().some(body=>volumes.some(a=>touches(a,body.x,body.z,body.radius)&&a.maxY>body.feet+.02&&a.minY<body.feet+body.height)))return {ok:false,code:'message.stepAside'};
+ if((residents?.bodies?.()??[]).some(body=>volumes.some(a=>touches(a,body.x,body.z,body.radius)&&a.maxY>body.feet+.02&&a.minY<body.feet+body.height)))return {ok:false,code:'message.stepAside'};
  if(volumes.some(a=>physicalSolids(b.gx*2,b.gz*2).some(r=>boxesOverlap(a,r,.001))))return {ok:false,code:'message.toyClearance'};
  if(outerBodies().some(a=>volumes.some(b=>touches(b,a.x,a.z,a.radius)&&b.maxY>a.feet&&b.minY<a.feet+a.height))||marineLife.animals.some(a=>volumes.some(b=>touches(b,a.x,a.z,a.profile.radius)&&b.maxY>a.y+a.profile.minY&&b.minY<a.y+a.profile.maxY)))return {ok:false,code:'message.creatureRoom'};
- return check;
+ return {...check,landingFeet:standing.landingFeet};
+}
+function commitPlacement(b){
+ const check=placementResult(b);if(!check.ok)return check;
+ const result=isToy()?placeDelight(state,b):build(state,b);
+ if(result.ok&&check.landingFeet!==null&&check.landingFeet!==undefined){feet=check.landingFeet;vy=0;camera.position.set(pos.x,feet+1.7,pos.z);}
+ return result;
 }
 function toyHint(p){if(!p)return '';const q=delights.motion.get(p.id);if(WATER_PORTS[p.kind]){if(q?.waterReason)return t('water.'+q.waterReason);if(p.kind==='pump')return t(p.on?q?.flow>0?'water.pumpOn':'water.dry':'water.pumpOff');if(p.kind==='lift')return t(q?.driveId?q.powered?'water.powered':'water.dry':'water.manual');return t(q?.flow>0?'water.flowing':q?.waterConnected?'water.dry':'water.unconnected');}if(p.kind==='gutter')return t(q?.connectedTo?'ui.toyPour':'ui.toyConnect');if(p.kind==='waterWheel'&&!q?.connectedTo)return t('ui.toyBell');if(p.kind==='lamp'&&!q?.connectedTo)return t('ui.toyLamp');return '';}
 function updateToyButton(){const p=target?.propId&&state.delights.find(p=>p.id===target.propId),show=locked&&tool<5&&!!p&&!target.outOfReach;$('useButton').hidden=!show;$('hud').classList.toggle('usingToy',show);if(!show)return;tileOutline.visible=false;const pouring=p.kind==='gutter',key=p.kind+':'+p.on+':'+i18n.language;if($('useButton').dataset.content===key)return;$('useButton').dataset.content=key;$('useButton').innerHTML=picture('prop:'+p.kind,t('prop.'+p.kind))+icon(pouring?'hose':p.kind==='pump'?(p.on?'pause':'play'):'hand');$('useButton').setAttribute('aria-label',pouring?t('ui.toyPour'):t('ui.toyUse',{noun:t('prop.'+p.kind)}));}
@@ -484,20 +535,21 @@ function act(){
  // A click can land between input/state changes and the next render. Recompute
  // visible transforms and the real ray once per click, never trust last frame's pick.
  scene.updateMatrixWorld(true);camera.position.set(pos.x,feet+1.7,pos.z);camera.rotation.set(pitch,yaw,0,'YXZ');camera.updateMatrixWorld();pick();
- if(tool<5&&target?.propId&&!target.outOfReach){if(state.delights.find(p=>p.id===target.propId)?.kind==='gutter'){if(tool!==3)chooseTool(3);return;}delights.use(target.propId);dirty=true;save();return;}
+ if(tool<5&&target?.propId&&!target.outOfReach){advanceChop(chop,null,performance.now()/1000);if(state.delights.find(p=>p.id===target.propId)?.kind==='gutter'){if(tool!==3)chooseTool(3);return;}delights.use(target.propId);dirty=true;save();return;}
+ if(tool===4){updateChopping(true);return;}
  if(!target||target.outOfReach){failure({code:target?farTargetHint(target,state.plots,camera.position.y):'target.aim'});return;}
  if(target.wildId){failure({code:'message.axeWild'});return;}
  const {gx,gz}=target,removedProp=state.delights.find(p=>p.id===target.propId),removedMaterial=removedProp?DELIGHTS[removedProp.kind].material:state.buildings.find(b=>b.id===target.buildId)?.material;let result;
  if(tool===0)result=dig(state,gx,gz,{actors:diggingActors()});if(tool===1){const check=plantingResult(gx,gz,seedKeys[seedIndex]);result=check.ok?plant(state,gx,gz,seedKeys[seedIndex]):check;}if(tool===2)result=fill(state,gx,gz);
- if(tool===5){const b=placementQuery?.candidate??selectedBuild();const check=placementResult(b);result=check.ok?(isToy()?placeDelight(state,b):build(state,b)):check;}
+ if(tool===5)result=commitPlacement(placementQuery?.candidate??selectedBuild());
  if(tool===6){const p=state.delights.find(p=>p.id===target.propId);result=p?removeDelight(state,p.id,removalOptions(p)):remove(state,target.buildId);}
  if(result){toast(result);if(result.ok){dirty=true;swing=.25;if(tool!==3)audio.play(['dig','plant','fill','water','harvest','build','remove'][tool],{sourceId:target.propId?'prop:'+target.propId:target.buildId?'piece:'+target.buildId:'cell:'+cellKey(gx,gz),material:tool===5?(isToy()?DELIGHTS[pieceKeys[pieceIndex]].material:MATERIALS[materialIndex]):tool===6?removedMaterial:undefined,x:gx*2,y:target.baseY??0,z:gz*2});burst(gx,gz,undefined,target.baseY??0);sync();save();}}
 }
 function layoutContextActions(){const host=$('actionReadRow'),button=$('useButton');if(button.parentElement!==host)host.prepend(button);}
 layoutContextActions();
 function resize(){camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);placeTool();layoutContextActions();updateCatalogScroll();}window.addEventListener('resize',resize);
-delights=createDelightSystem({scene,solidsAt:physicalSolids,getState:()=>state,getPlayer:()=>pos,changed:()=>{dirty=true;},continuous:(id,kind,options)=>audio.setContinuous(id,kind,options),event:(kind,point)=>{audio.play(kind,point);if(kind==='bell')marineLife.greet?.(point);},getBodies:liftBodies,moveRiders:(ids,delta)=>{if(ids.includes('player')){feet+=delta;vy=0;}residents?.carry?.(ids,delta);},obstacles:id=>[...state.buildings.flatMap(boxes),...state.delights.flatMap(p=>p.id===id?propBoxes(p).slice(0,-1):propBoxes(p)),...reefSolids]});
-residents=createResidentSystem({scene,getState:()=>state,getPlayer:()=>pos,canStand:residentCanStand,floorHeight:residentFloor,getDelights:()=>delights,getWindows:()=>marineLife.windows,changed:()=>{dirty=true;},notice:r=>{audio.play('arrival',{sourceId:'resident:'+r.id,x:r.x,y:r.baseY??0,z:r.z});toast(r.habitat==='ocean'?'message.diver':'message.neighbour');}});
+delights=createDelightSystem({scene,solidsAt:naturalSolids,geometryVersion:()=>worldRuntime.version,getState:()=>state,getPlayer:()=>pos,changed:()=>{dirty=true;},continuous:(id,kind,options)=>audio.setContinuous(id,kind,options),event:(kind,point)=>{audio.play(kind,point);if(kind==='bell')marineLife.greet?.(point);},getBodies:liftBodies,moveRiders:(ids,delta)=>{if(ids.includes('player')){feet+=delta;vy=0;}residents?.carry?.(ids,delta);},obstacles:id=>[...state.buildings.flatMap(boxes),...state.delights.flatMap(p=>p.id===id?propBoxes(p).slice(0,-1):propBoxes(p)),...reefSolids,...(delights?.waterSolids?.()??[])]});
+residents=createResidentSystem({scene,getState:()=>state,getPlayer:()=>pos,canStand:residentCanStand,floorHeight:residentFloor,getDelights:()=>delights,getWindows:()=>marineLife.windows,getOutingTargets:r=>residentOutingTargets(state,r,{canStand:residentCanStand}),changed:()=>{dirty=true;},notice:r=>{audio.play('arrival',{sourceId:'resident:'+r.id,x:r.x,y:r.baseY??0,z:r.z});toast(r.habitat==='ocean'?'message.diver':'message.neighbour');}});
 garden=createGardenSystem({scene,getState:()=>state,getPlayer:()=>pos,canStand:(x,z)=>residentCanStand(x,z,terrainHeight(x,z))&&!state.buildings.some(b=>Math.abs(x-b.gx*2)<1.7&&Math.abs(z-b.gz*2)<1.7),getDelights:()=>delights,flyClear:(x,y,z,own)=>![...state.buildings.flatMap(boxes),...state.delights.filter(p=>p.id!==own).flatMap(p=>propBoxes(p))].some(a=>touches(a,x,z,.13)&&a.maxY>y&&a.minY<y+.3),treeHeight:key=>(plantMeshes.get(key)?.userData.perchHeight??3.5)+(state.plots[key]?.baseY??0),onDiscover:r=>{dirty=true;audio.play('discover',{sourceId:'discovery:'+r.id,x:pos.x,y:feet,z:pos.z});lastReward={seed:r.seed,newSeed:r.newSeed};renderReward();rewardUntil=elapsed+5;$('reward').classList.add('show');toast(r.newSeed?'message.newSeed':'message.secret');burst(Math.round(pos.x/2),Math.round(pos.z/2),'#eddb90');updateHUD();save();}});
 let currentReading=null,menuReading=null,lastReadingHTML='',lastReadingAt=0;
 const readingFocus=createReadingFocus(),readingRay=new THREE.Raycaster();readingRay.far=12;
@@ -635,7 +687,7 @@ function frame(now){
  // The opaque first-visit landing has its own static picture. Keep the clock current
  // without rendering or posing the hidden world; the first explicit Play resumes it.
  if(!started&&!$('overlay').hidden&&$('overlay').dataset.mode==='landing')return;
- const worldStart=performance.now();worldRuntime.update(pos.x,pos.z);const nearbyKey=`${Math.floor(pos.x/8)},${Math.floor(pos.z/8)}`;if(nearbyKey!==wildCell){wildCell=nearbyKey;syncWild();}if(worldVersion!==worldRuntime.version){worldVersion=worldRuntime.version;refreshInteractive();}worldTiming.push(performance.now()-worldStart);if(worldTiming.length>180)worldTiming.shift();
+ const worldStart=performance.now();worldRuntime.update(pos.x,pos.z);const nearbyKey=`${Math.floor(pos.x/8)},${Math.floor(pos.z/8)}`;if(nearbyKey!==wildCell){wildCell=nearbyKey;syncWild();}if(worldVersion!==worldRuntime.version){delights.sync();worldVersion=worldRuntime.version;refreshInteractive();}worldTiming.push(performance.now()-worldStart);if(worldTiming.length>180)worldTiming.shift();
  elapsed+=dt;if(realDt<1){timing.push(realDt*1000);if(timing.length>180)timing.shift();}
  if(locked){
   if(fallbackLook){if(keys.has('ArrowLeft'))yaw+=dt*1.4*(display.comfort?.65:1);if(keys.has('ArrowRight'))yaw-=dt*1.4*(display.comfort?.65:1);if(keys.has('ArrowUp'))pitch+=dt*1.1*(display.comfort?.65:1);if(keys.has('ArrowDown'))pitch-=dt*1.1*(display.comfort?.65:1);pitch=Math.max(-1.45,Math.min(1.45,pitch));}
@@ -665,14 +717,9 @@ function frame(now){
  if(locked&&held&&tool===3&&target&&!target.outOfReach&&!target.wildId){const pouring=target.propId&&delights.pour(target.propId,dt),result=pouring?{ok:true}:target.propId?{ok:false,code:'ui.toyReady'}:water(state,target.gx,target.gz,dt);if(result.ok){dirty=true;stream.visible=true;if(!pouring&&frames%6===0)splash(target.gx*2,target.gz*2,target.baseY);const origin=new THREE.Vector3(...(toolMesh.userData.spout??[0,.2,-.2])).applyMatrix4(toolMesh.matrixWorld),a=pouring?delights.anchor(target.propId,'pour'):null,end=a?new THREE.Vector3(a.x,a.y,a.z):new THREE.Vector3(target.gx*2,target.baseY+.12,target.gz*2);for(let i=0;i<28;i++){const t=((i/28)+elapsed*1.8)%1;const p=origin.clone().lerp(end,t);p.y+=Math.sin(t*Math.PI)*.35;waterPositions[i*3]=p.x;waterPositions[i*3+1]=p.y;waterPositions[i*3+2]=p.z;}waterGeometry.attributes.position.needsUpdate=true;}else if(frames%45===0)toast(result);}
  audio.setContinuous('player:water','water',{active:stream.visible,x:pos.x,y:feet+1,z:pos.z});
  const plant=target&&state.plots[cellKey(target.gx,target.gz)],wild=target?.wildId&&resourceRecord(target.wildId);
- const harvestable=wild||plant?.seed&&plant.growth>=1;
- const chopKey=locked&&held&&tool===4&&target&&!target.outOfReach&&harvestable?(wild?'wild:'+wild.id:'plot:'+cellKey(target.gx,target.gz)):null;
- const chopping=advanceChop(chop,chopKey,dt,isFlower(wild?.kind??plant?.seed)?.45:1.8);chopProgress=chopping.progress;
- if(chopping.impact){totalImpacts++;swing=.25;audio.play(isFlower(wild?.kind??plant?.seed)?'plant':'chop',{sourceId:chopKey,material:SEEDS[wild?.kind??plant?.seed]?.resource,x:target.gx*2,y:target.baseY??0,z:target.gz*2});burst(target.gx,target.gz,'#cdaa74',target.baseY??0);}
- if(locked&&held&&tool===4&&!chopKey)failure({code:!target?'target.aim':target.outOfReach?'target.closer':plant?.seed?'message.letGrow':'message.maturePlant'});
+ const {chopKey,chopping}=updateChopping();
  if(locked&&held&&tool===3&&(!target||target.outOfReach||target.wildId))failure({code:!target?'target.aim':target.outOfReach?'target.closer':'message.plantFillFirst'});
- if(chopping.complete)finishHarvest();
- renderActionEcho(stream.visible?'water':'chop',stream.visible?(plant?.water??1):chopping.progress,stream.visible||!!chopKey,chopping.complete);renderSelectionDetail();
+ renderActionEcho(stream.visible?'water':'chop',stream.visible?(plant?.water??1):chopping.progress,stream.visible||!!chopKey&&held,chopping.complete);renderSelectionDetail();
  for(const [id,g] of wildMeshes){g.rotation.z=chopKey==='wild:'+id?Math.sin(chop.elapsed*28)*.025:0;animateTree(g,{growth:1,time:elapsed});}
  for(const [k,g] of plantMeshes)g.rotation.z=chopKey==='plot:'+k?Math.sin(chop.elapsed*28)*.025:0;
  for(let i=falling.length-1;i>=0;i--){const f=falling[i];f.life-=dt;f.g.rotation.z+=dt*1.7;f.g.scale.multiplyScalar(Math.max(0,1-dt*1.6));f.g.position.y-=dt*.3;if(f.life<=0){scene.remove(f.g);falling.splice(i,1);}}
