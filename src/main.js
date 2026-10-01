@@ -53,13 +53,30 @@ import {createI18n,LANGUAGES} from './i18n.js';
 import {nearestReading,createReadingFocus,assistedReading} from './reading.js';
 import {flowerEnvelope,flowerTarget} from './flower-targeting.js';
 import {plotSurfaces} from './plot-surfaces.js';
+import {createWorldLibrary,indexedWorldStore,worldErrorKey} from './world-library.js';
+import {createWorldSession} from './world-session.js';
+import {createWorldMenu} from './world-menu.js';
 import './ui.css';
 const $=id=>document.getElementById(id), canvas=$('game');
 let localeStorage;try{localeStorage=localStorage;}catch{}
 const i18n=boot?.i18n??createI18n({storage:localeStorage,languages:navigator.languages}),t=i18n.t;
 const display=readDisplay(localeStorage),quality=createQuality(display);
-let state=freshState(),loadWarning='',hasSavedWorld=false;
-try{const raw=localStorage.getItem(SAVE_KEY);if(raw){state=deserialize(raw);hasSavedWorld=true;}}catch{loadWarning='ui.loadWarning';}
+let state=freshState(),loadWarning='',hasSavedWorld=false,initialWorld=null,worldsOpen=false,worldMenu;
+let indexedStorage;try{indexedStorage=globalThis.indexedDB;}catch{}
+const worldLibrary=createWorldLibrary({store:indexedWorldStore(indexedStorage??null),validate:deserialize});
+try{
+ let legacyRaw=null,legacyUnavailable=false;try{legacyRaw=localStorage.getItem(SAVE_KEY);}catch{legacyUnavailable=true;}
+ const initialized=await worldLibrary.initialize({legacyRaw,legacyUnavailable,name:t('worlds.defaultName'),freshRaw:serialize(state)});
+ loadWarning=initialized.warning;
+ initialWorld=await worldLibrary.load(new URL(location.href).searchParams.get('world')??undefined);
+ state=deserialize(initialWorld.raw);hasSavedWorld=true;
+ const url=new URL(location.href);url.searchParams.set('world',initialWorld.id);history.replaceState(null,'',url);
+}catch(e){loadWarning=loadWarning||worldErrorKey(e);}
+const worldSession=createWorldSession({library:worldLibrary,initial:initialWorld,capture:worldSnapshot,onStatus:key=>saveStatus(key),navigate:id=>{
+ const url=new URL(location.href);url.searchParams.set('world',id);location.assign(url.href);
+}});
+function worldSnapshot(){state.player={x:pos.x,y:feet,z:pos.z,yaw,pitch};return serialize(state);}
+function worldError(error){const key=worldErrorKey(error);saveStatus(key);return key;}
 const renderer=new THREE.WebGLRenderer({canvas,antialias:true,powerPreference:'high-performance'});
 renderer.setPixelRatio(Math.min(devicePixelRatio,1.6));renderer.setSize(innerWidth,innerHeight);renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFShadowMap;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=.95;
 const scene=new THREE.Scene(),dayBackground=new THREE.Color('#b7d7d7');scene.background=dayBackground;scene.fog=new THREE.Fog('#b7d7d7',38,118);
@@ -118,16 +135,33 @@ let pourWeight=0,swimHudMode=null,nextBirdCall=15;
 const chop={},wheel={};let chopProgress=0,totalImpacts=0,rewardUntil=0,lastCue="",timedEcho=null,selectionDetail="",lastFailure=null;const failureMemory={};
 function releaseActions(){movementAudio.reset();audio.setContinuous('player:water','water',{active:false});held=false;}
 function resetActions(){releaseActions();advanceChop(chop,null,performance.now()/1000);chopProgress=0;wheelStep(wheel,0,0,0,false);}
-let lastReward=null,lastToast=null,saveStatusKey='ui.saved';
+let lastReward=null,lastToast=null,saveStatusKey=initialWorld?'worlds.saved':'worlds.noActive';
 function failure(result){const key=target?(target.propId??target.buildId??target.wildId??cellKey(target.gx,target.gz)):'none';if(!admitFailure(failureMemory,result.code,key,elapsed))return;lastFailure={result,until:elapsed+2.5};renderSelectionDetail();}
 function renderSelectionDetail(){const failed=locked&&lastFailure&&elapsed<lastFailure.until,text=failed?i18n.message(lastFailure.result):locked&&tool===5&&placementQuery&&!placementQuery.validation.ok?i18n.message(placementQuery.validation):locked&&tool===5&&placementQuery?t('ui.buildCost',{count:(DELIGHTS[pieceKeys[pieceIndex]]??PIECES[pieceKeys[pieceIndex]]).cost,material:t('material.'+(isToy()?DELIGHTS[pieceKeys[pieceIndex]].material:MATERIALS[materialIndex])),level:placementQuery.candidate.level??0}):locked&&tool<5&&target?.propId?toyHint(state.delights.find(p=>p.id===target.propId))||selectionDetail:selectionDetail;const detail=text+(locked&&tool===5&&placementQuery?.validation.ok&&placementQuery.connection?' · '+t(placementQuery.connection):'');if($('selectedDetail').textContent!==detail)$('selectedDetail').textContent=detail;$('selection').dataset.failure=String(!!failed);}
 function toast(code,params={}){if(typeof code==='object'&&code.ok===false){failure(code);return;}lastToast=typeof code==='object'?code:{code,params};$('toast').textContent=i18n.message(lastToast);toastUntil=elapsed+2.5;$('toast').classList.add('show');}
-function saveStatus(key){saveStatusKey=key;$('saveStatus').textContent=t(key);$('saveStatus').dataset.warning=String(['ui.saveUnavailable','ui.loadFailed'].includes(key));}
-function save(){
- if(!dirty)return;
- state.player={x:pos.x,y:feet,z:pos.z,yaw,pitch};
- try{localStorage.setItem(SAVE_KEY,serialize(state));saveStatus(fallbackLook?'ui.savedFallback':'ui.saved');dirty=false;}catch{saveStatus('ui.saveUnavailable');}
+function worldIdentity(){
+ const name=worldSession.current?.name;
+ $('activeWorld').textContent=name??t('worlds.noActive');
+ $('welcomeWorld').textContent=name?t('worlds.active',{name}):t('worlds.noActive');
 }
+function saveStatus(key){
+ saveStatusKey=key;
+ for(const id of ['saveStatus','welcomeSaveStatus']){
+  $(id).textContent=t(key);
+  $(id).dataset.warning=String(!['ui.saved','ui.savedFallback','ui.fallback','worlds.saved','worlds.saving'].includes(key));
+ }
+ worldIdentity();
+}
+async function save(force=false){
+ if(worldSession.leaving)return false;
+ if(!dirty&&!force)return true;
+ try{
+  await worldSession.save();
+  dirty=worldSnapshot()!==worldSession.current?.raw;
+  return !dirty;
+ }catch(e){worldError(e);return false;}
+}
+
 function sync(){
  connectionPreviewKey='';
  const choice=homeChoice(state);if(JSON.stringify(choice.record)!==JSON.stringify(state.home)){state.home=choice.record;dirty=true;}
@@ -321,9 +355,11 @@ function updateFriendButton(){
  nearestFriend=(state.residents??[]).filter(r=>r.x!==null&&Math.hypot(r.x-pos.x,residentFloor(r.x,r.z,r.baseY??0)-feet,r.z-pos.z)<4.5).find(r=>{const point=new THREE.Vector3(r.x,residentFloor(r.x,r.z,r.baseY??0)+1,r.z),p=point.clone().project(camera);if(!(p.z>=-1&&p.z<=1&&Math.abs(p.x)<.9&&Math.abs(p.y)<.9))return false;const direction=point.clone().sub(camera.position),ray=new THREE.Raycaster(camera.position,direction.clone().normalize(),0,direction.length());return ray.intersectObjects([...buildMeshes.values()],true).length===0;});
  $('friendButton').hidden=!locked||!nearestFriend;
 }
-function activateFallback(){document.exitPointerLock?.();fallbackLook=true;locked=true;started=true;catalogOpen=false;$('overlay').hidden=true;$('catalog').hidden=true;keys.clear();held=false;saveStatus('ui.fallback');toast('ui.fallbackToast');wake();}
+function activateFallback(){document.exitPointerLock?.();fallbackLook=true;locked=true;started=true;catalogOpen=false;$('overlay').hidden=true;$('catalog').hidden=true;keys.clear();held=false;toast('ui.fallbackToast');wake();}
 function lockFailed(){if(started&&!fallbackLook)pauseGame();else activateFallback();}
 function requestLock(){
+ if(worldsOpen)return;
+ if(!worldSession.current){openWorlds();return;}
  if(!runtimeReady){pendingStart=true;return;}
  clearReading();document.activeElement?.blur();
  resetActions();audio.start();outfitResident=null;$('wardrobe').hidden=true;catalogOpen=false;$('catalog').hidden=true;
@@ -333,17 +369,35 @@ function requestLock(){
 $('overlay').addEventListener('click',e=>{if(started&&$('overlay').dataset.mode==='pause'&&!e.target.closest('button,a,input,select,option,label,summary,details')){e.preventDefault();e.stopPropagation();requestLock();}});
 canvas.addEventListener('click',()=>{if(!locked&&!catalogOpen&&outfitResident===null)requestLock();});
 $('start').onclick=requestLock;for(const id of ['pauseBuild','buildTab'])$(id).onclick=()=>showCatalog(true,'build');for(const id of ['pauseJournal','journalTab'])$(id).onclick=()=>showCatalog(true,'journal');$('closeCatalog').onclick=()=>showCatalog(false);
-$('reset').onclick=()=>{
- if(!confirm(t('ui.resetConfirm')))return;
- // Persist first: a denied write leaves the old world intact. Reload disposes all old runtime identities.
- try{localStorage.setItem(SAVE_KEY,serialize(freshState()));dirty=false;location.reload();}
- catch{saveStatus('ui.saveUnavailable');$('welcomeSave').textContent=t('ui.saveUnavailable');}
-};
+function openWorlds(){
+ if(!runtimeReady)return;
+ worldsOpen=true;pauseGame();catalogOpen=true;
+ $('overlay').hidden=true;$('catalog').hidden=true;$('wardrobe').hidden=true;
+ worldMenu.show();
+}
+function closeWorlds(){
+ if(worldMenu.busy)return;
+ worldsOpen=false;worldMenu.hide();catalogOpen=false;$('overlay').hidden=false;refreshPause();$('reset').focus();
+}
+worldMenu=createWorldMenu({library:worldLibrary,session:worldSession,t,save:async()=>{const ok=await save(true);if(!ok)throw Object.assign(new Error(saveStatusKey),{code:saveStatusKey});return ok;},freshRaw:()=>serialize(freshState()),onClose:closeWorlds,onChanged:worldIdentity,onError:worldError});
+$('reset').onclick=openWorlds;
+$('saveNow').onclick=()=>save(true);
+
 $('hud').addEventListener('click',e=>{if(document.pointerLockElement===canvas){e.preventDefault();e.stopImmediatePropagation();}},true);
 document.addEventListener('pointerlockchange',()=>{if(fallbackLook)return;resetActions();locked=document.pointerLockElement===canvas;held=false;keys.clear();if(locked){started=true;$('overlay').hidden=true;$('catalog').hidden=true;catalogOpen=false;wake();}else if(!catalogOpen){clearReading();audio.pause();clearEffects();$('overlay').hidden=false;refreshPause();}save();});
 document.addEventListener('pointerlockerror',lockFailed);
 document.addEventListener('mousemove',e=>{if(locked&&(!fallbackLook||rightDrag)){yaw-=e.movementX*.0022*(display.comfort?.65:1);pitch=Math.max(-1.45,Math.min(1.45,pitch-e.movementY*.0022*(display.comfort?.65:1)));dirty=true;}});
 document.addEventListener('keydown',e=>{
+ if(worldsOpen){
+  if(e.code==='Escape'){e.preventDefault();if(!e.repeat)closeWorlds();}
+  if(e.code==='Tab'){
+   const controls=[...$('worlds').querySelectorAll('button:not(:disabled),input:not(:disabled)')];
+   const first=controls[0],last=controls.at(-1);
+   if(e.shiftKey&&document.activeElement===first){e.preventDefault();last?.focus();}
+   else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first?.focus();}
+  }
+  return;
+ }
  // Native controls keep their text, selection and range editing keys.
  if(e.isComposing||e.metaKey||e.altKey||e.target.closest('select,input,textarea,[contenteditable]:not([contenteditable="false"])'))return;
  // Ctrl is also the held swim-descent control; keep movement while diving.
@@ -388,7 +442,8 @@ document.addEventListener('wheel',e=>{
  const delta=wheelStep(wheel,e.deltaY,e.deltaMode,performance.now(),enabled);
  if(!enabled)return;e.preventDefault();if(delta)browse(delta);
 },{passive:false});
-window.addEventListener('beforeunload',save);
+window.addEventListener('beforeunload',()=>{void save();});
+window.addEventListener('pagehide',()=>{void save();});
 const raycaster=new THREE.Raycaster(),center=new THREE.Vector2();raycaster.far=60;
 function pick(){
  placementQuery=null;raycaster.setFromCamera(center,camera);const hits=raycaster.intersectObjects(interactive,true);target=null;
@@ -653,7 +708,7 @@ function localizeUI(refresh=true){
  $('welcomeControls').textContent=['walk','look','jump','choose','hold','build','book'].map(k=>t('control.'+k)).join(' · ');
  $('controlFooter').textContent=['walk','look','jump','run','choose','build','book','pause'].map(k=>t('control.'+k)).join(' · ');
  if(loadWarning)$('welcomeSave').textContent=t(loadWarning);
- saveStatus(saveStatusKey);renderReward();if(lastToast)$('toast').textContent=i18n.message(lastToast);
+ saveStatus(saveStatusKey);worldMenu?.localize();renderReward();if(lastToast)$('toast').textContent=i18n.message(lastToast);
  if(refresh){setupPictures();setupLivingUI();setupDisplayUI();updateHUD();if(!$('catalog').hidden)renderCatalog();if(outfitResident!==null)openWardrobe(outfitResident);swimHudMode=null;pick();}
  const focus=focusId?$(focusId):focusData?document.querySelector(`[data-${focusData}="${focusValue}"]`):null;focus?.focus({preventScroll:true});
  $('catalogBody').scrollTop=scroll;$('wardrobe').scrollTop=wardrobeScroll;
@@ -665,7 +720,7 @@ setupLocaleUI();setupPictures();setupLivingUI();setupDisplayUI();
 while(syncWild(1))await yieldBoot();
 for(const [k,p] of Object.entries(state.plots))if(p.seed){const tree=measureBoot('plant:'+p.seed,()=>createTree(p.seed,{variation:p.variation??0}));tree.userData.perchHeight=new THREE.Box3().setFromObject(tree).max.y-.15;tree.position.set(p.gx*2,p.baseY+(p.phase==='hole'?-.5:0),p.gz*2);tree.userData.plot=k;tree.traverse(o=>{if(o.isMesh)o.userData.plot=k;});scene.add(tree);plantMeshes.set(k,tree);await yieldBoot();}
 for(const b of state.buildings){const g=createPlacedPiece(b);g.position.set(b.gx*2,baseOf(b)+b.level*2.4,b.gz*2);g.rotation.y=b.rotation*Math.PI/2;g.traverse(o=>{if(o.isMesh)o.userData.buildId=b.id;});scene.add(g);buildMeshes.set(b.id,g);await yieldBoot();}
-sync();chooseTool(0);if(loadWarning){$('welcomeSave').textContent=t(loadWarning);saveStatus('ui.loadFailed');}
+sync();chooseTool(0);if(loadWarning){$('welcomeSave').textContent=t(loadWarning);saveStatus(loadWarning);}
 // Prepare ground under the player; distant detail remains paced after Play.
 await yieldBoot();worldRuntime.update(pos.x,pos.z);refreshInteractive();applyQuality();
 const timing=[],worldTiming=[];let frames=0,livingTime=0;
@@ -735,6 +790,7 @@ function frame(now){
  }
  if(frames%5===0)updateFriendButton();
  if(elapsed>rewardUntil)$('reward').classList.remove('show');
+ if(dirty&&saveStatusKey==='worlds.saved')saveStatus('worlds.unsaved');
  if(elapsed>toastUntil)$('toast').classList.remove('show');if(elapsed-lastSave>3){save();lastSave=elapsed;}
  updateReadable();
  if(keys.has('KeyH')){homeHeld+=dt;$('homeDirection').dataset.holding='true';if(homeHeld>=.8){keys.delete('KeyH');homeHeld=0;returnHome();}}else{homeHeld=0;$('homeDirection').dataset.holding='false';}

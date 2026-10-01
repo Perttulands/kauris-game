@@ -18,7 +18,7 @@
 
  <div id="worldGuides"> <details id="journal"><summary><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M5 6q7-3 11 1 5-4 11-1v21q-6-3-11 0-5-3-11 0Z"/><path d="M16 7v20M9 12h3m-3 5h3m8-5h3m-3 5h3"/></svg><b id="objective">Plant a tree</b></summary><nav id="loopGuide" data-i18n-aria="aria.growingSteps" aria-label="Growing steps"></nav><p id="journalText"></p><footer id="controlFooter"></footer></details><div id="homeDirection" hidden></div> <div id="swimCue" data-i18n-aria="aria.swimming" hidden aria-label="Swimming controls"></div><div id="houseCue" data-i18n-aria="aria.house" hidden aria-label="House readiness"></div></div>
  <div id="crosshair"><i></i><i></i></div>
- <div id="noticeStack"><small id="saveStatus" role="status">Saved on this browser</small><div id="toast" role="status"></div><div id="reward" role="status"></div></div>
+ <div id="noticeStack"><small id="activeWorld"></small><small id="saveStatus" role="status">Saved on this browser</small><div id="toast" role="status"></div><div id="reward" role="status"></div></div>
  <div id="playDock">
   <div id="readingStack"><div id="actionReadRow"><button id="useButton" hidden></button><div id="targetCue" hidden></div><div id="targetLabel"></div></div></div>
   <div id="choiceDock"><div id="selection"><button id="previousChoice" data-i18n-aria="aria.previous" aria-label="Previous choice">‹</button><div id="selectedPicture"></div><div class="selectionWords"><span id="selectedName"></span><small id="selectedDetail"></small></div><button id="nextChoice" data-i18n-aria="aria.next" aria-label="Next choice">›</button></div><div id="buildActions" hidden></div></div>
@@ -26,6 +26,22 @@
  </div>
  <div id="contextActions"><button id="friendButton" data-i18n-aria="aria.clothes" hidden aria-label="Choose neighbour clothes"></button></div><div id="residentCues"></div>
 </div>
+<section id="worlds" hidden role="dialog" aria-modal="true" aria-labelledby="worldsTitle">
+ <div class="worldPanel">
+  <header><h2 id="worldsTitle" data-i18n="worlds.title">Worlds</h2><button id="worldClose" data-i18n="worlds.back">Back</button></header>
+  <p id="worldActive"></p><p data-i18n="worlds.localHelp"></p>
+  <div id="worldList" aria-labelledby="worldsTitle"></div>
+  <label for="worldName" data-i18n="worlds.name">World name</label><input id="worldName" type="text" maxlength="60" autocomplete="off">
+  <p data-i18n="worlds.nameHelp"></p>
+  <div class="worldActions">
+   <button id="worldNew" data-i18n="worlds.new">New world</button>
+   <button id="worldLoad" data-i18n="worlds.load">Play selected</button>
+   <button id="worldCopy" data-i18n="worlds.copy">Copy and play</button>
+   <button id="worldRename" data-i18n="worlds.rename">Rename</button>
+   <button id="worldSave" data-i18n="worlds.saveNow">Save now</button>
+  </div><p id="worldStatus" role="status"></p>
+ </div>
+</section>
 <section id="overlay" data-mode="landing"><div class="welcome">
  <div class="landingTop"><label class="languageControl"><span data-i18n="language.label">Language</span><select id="welcomeLanguage" class="languageSelect" aria-label="Language"></select></label><small class="languageStatus" role="status"></small></div>
  <div id="landingHero" class="landingOnly"><img src="/assets/landing/meadow-home.webp" width="1600" height="1200" alt="" fetchpriority="high" decoding="async"></div>
@@ -33,7 +49,7 @@
  <div id="welcomePictures" class="welcomePictures" aria-hidden="true"></div>
  <button id="start" class="primary" aria-label="Play"></button><p id="bootStatus" role="status" data-i18n="boot.preparing"></p>
  <p id="landingInputCue" class="landingOnly"><svg viewBox="0 0 48 32" aria-hidden="true"><rect x="1.5" y="7" width="31" height="20" rx="4"/><path d="M7 12h2m4 0h2m4 0h2m4 0h2M7 17h2m4 0h2m4 0h2m4 0h2M9 22h16"/><rect x="37" y="3" width="9" height="24" rx="4.5"/><path d="M41.5 4v7"/></svg><span class="landingControls"><span data-i18n="control.walk">WASD: walk</span><span data-i18n="control.look">Mouse: look</span></span></p>
- <nav class="pauseMenus"><button id="pauseBuild"></button><button id="pauseJournal"></button><button id="pauseMute"></button></nav><label class="volumeControl" for="masterVolume"><span data-i18n="sound.volume">Volume</span><input id="masterVolume" type="range" min="0" max="100" step="1"><output id="volumeValue" for="masterVolume"></output></label><details id="displaySettings"><summary data-i18n="display.settings"></summary><label><span data-i18n="display.graphics"></span><select id="graphicsMode"></select></label><label><input type="checkbox" id="comfortMode"><span data-i18n="display.comfort"></span></label><p data-i18n="display.comfortHelp"></p></details><div id="homeActions"><button id="returnHome"></button><button id="setHome"></button><p id="homeStatus" role="status"></p></div><div class="welcomeControls" id="welcomeControls"></div><small id="welcomeSave" data-i18n="ui.welcomeSave">Your world is saved in this browser.</small><button id="reset" class="quiet" data-i18n="ui.reset">Create new world…</button>
+ <nav class="pauseMenus"><button id="pauseBuild"></button><button id="pauseJournal"></button><button id="pauseMute"></button></nav><label class="volumeControl" for="masterVolume"><span data-i18n="sound.volume">Volume</span><input id="masterVolume" type="range" min="0" max="100" step="1"><output id="volumeValue" for="masterVolume"></output></label><details id="displaySettings"><summary data-i18n="display.settings"></summary><label><span data-i18n="display.graphics"></span><select id="graphicsMode"></select></label><label><input type="checkbox" id="comfortMode"><span data-i18n="display.comfort"></span></label><p data-i18n="display.comfortHelp"></p></details><div id="homeActions"><button id="returnHome"></button><button id="setHome"></button><p id="homeStatus" role="status"></p></div><div class="welcomeControls" id="welcomeControls"></div><small id="welcomeSave" data-i18n="ui.welcomeSave">Worlds are stored locally in this browser.</small><p id="welcomeWorld"></p><div class="worldActions"><button id="reset" data-i18n="worlds.title">Worlds</button><button id="saveNow" data-i18n="worlds.saveNow">Save now</button></div><p id="welcomeSaveStatus" role="status"></p>
  </div>
 </div></section>
 <section id="catalog" hidden><div class="catalogPanel">

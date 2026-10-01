@@ -7,7 +7,7 @@ function fixture({started=true,fallbackLook=true}={}){
  const listeners={},elements=new Map();
  const doc={activeElement:null,pointerLockElement:null,exitPointerLock(){this.pointerLockElement=null;},addEventListener(k,fn){listeners[k]=fn;}};
  function element(id){if(!elements.has(id))elements.set(id,{id,hidden:true,dataset:{},scrollTop:0,closest(){return null},focus(){doc.activeElement=this;},blur(){doc.activeElement=null;},querySelector(){return element('chosen');}});return elements.get(id);}
- const scope={document:doc,$:element,audio:{pause(){},start(){}},clearReading(){},clearEffects(){},resetActions(){},renderCatalog(){},refreshPause(){},wake(){},save(){},saveStatus(){},toast(){},canvas:{},nearestFriend:null,openWardrobe(){},keys:new Set(),chooseTool(){},browse(){},rotateChoice(){},tools:[],swimmingAt:()=>true,pos:{x:0,z:0},feet:0,performance};
+ const scope={worldSession:{current:{id:'test'}},worldsOpen:false,document:doc,$:element,audio:{pause(){},start(){}},clearReading(){},clearEffects(){},resetActions(){},renderCatalog(){},refreshPause(){},wake(){},save(){},saveStatus(){},toast(){},canvas:{},nearestFriend:null,openWardrobe(){},keys:new Set(),chooseTool(){},browse(){},rotateChoice(){},tools:[],swimmingAt:()=>true,pos:{x:0,z:0},feet:0,performance};
  vm.createContext(scope);
  const menus=main.slice(main.indexOf('function closeMenu('),main.indexOf('// Keep the actual focused'));
  const lock=main.slice(main.indexOf('function activateFallback('),main.indexOf("$('overlay').addEventListener"));
@@ -37,4 +37,15 @@ test('Ctrl descent and held movement reach gameplay while modified menu shortcut
  }
  f.key('KeyJ',{ctrlKey:true});assert.equal(f.scope.read().catalogOpen,false);
  const paused=fixture({started:false});paused.key('KeyW',{ctrlKey:true});assert.equal(paused.scope.keys.size,0);
+});
+
+test('Worlds keeps J/native input and Escape separate from play; Tab wraps inside dialog',()=>{
+ const f=fixture({started:false});f.scope.worldsOpen=true;
+ let closed=0;f.scope.closeWorlds=()=>{closed++;f.scope.worldsOpen=false;};
+ const first=f.element('worldClose'),last=f.element('worldSave');
+ f.element('worlds').querySelectorAll=()=>[first,last];
+ f.doc.activeElement={closest:()=>({})};f.key('KeyJ');assert.equal(f.scope.read().catalogOpen,false);
+ f.doc.activeElement=last;assert.equal(f.key('Tab'),true);assert.equal(f.doc.activeElement,first);
+ assert.equal(f.key('Tab',{shiftKey:true}),true);assert.equal(f.doc.activeElement,last);
+ f.key('Escape');assert.equal(closed,1);assert.equal(f.scope.read().locked,false);
 });

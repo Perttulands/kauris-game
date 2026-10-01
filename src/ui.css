@@ -54,7 +54,7 @@
 #overlay .pauseMenus svg{width:25px;height:25px}
 #overlay .pauseMenus kbd{font-size:14px;color:#687960;border-color:#b8c3a8}
 #overlay #welcomeSave{display:block;color:#6c7864;font-size:16px;line-height:1.4;margin:0;max-width:365px}
-#overlay[data-mode=landing] #welcomeControls,#overlay[data-mode=landing] #pauseTitle,#overlay[data-mode=landing] #reset{display:none}
+#overlay[data-mode=landing] #welcomeControls,#overlay[data-mode=landing] #pauseTitle{display:none}
 #overlay[data-mode=pause]{background:#183b32b8;backdrop-filter:blur(8px);padding:24px}
 #overlay[data-mode=pause] .welcome{display:block;max-width:620px;background:#f6f0df;border:1px solid #e0d8bd;border-radius:26px;padding:30px 38px;box-shadow:0 20px 70px #09251e4d}
 #overlay[data-mode=pause] .landingOnly{display:none!important}
@@ -64,7 +64,6 @@
 #overlay[data-mode=pause] #pauseTitle{font-size:20px;font-weight:400;color:#69795f;margin:0 0 24px}
 #overlay[data-mode=pause] #start{font-size:24px;min-height:60px;margin-bottom:22px}
 #overlay[data-mode=pause] #welcomeControls{font-size:16px;line-height:1.65;color:#58694f;margin:16px 0}
-#overlay[data-mode=pause] #reset{display:block;margin:20px 0 0;padding:13px 0 0;border:0;border-top:1px solid #d8ddc7;border-radius:0;color:#795b46;font-size:16px;background:none;box-shadow:none;text-align:left;width:100%}
 @media(max-width:760px){
  #overlay{padding:22px}
  #overlay .welcome{max-width:620px;display:flex;flex-direction:column;gap:0}
@@ -109,3 +108,25 @@
 .volumeControl input{flex:1;min-width:100px;max-width:240px;accent-color:#527b55}
 .volumeControl output{min-width:4ch;font-variant-numeric:tabular-nums}
 @media(max-width:700px){.menuShortcuts>span>span{display:none}.menuShortcuts{gap:8px}.menuShortcuts>span{gap:3px}.volumeControl{gap:8px}}
+
+/* Named local worlds use the existing native menu controls and readable scale. */
+#worlds{position:fixed;inset:0;z-index:50;background:#183e45e8;overflow:auto;padding:24px;display:grid;place-items:center}
+#worlds[hidden]{display:none}
+.worldPanel{box-sizing:border-box;width:min(760px,100%);background:#fff5df;color:#263e3d;border-radius:24px;padding:24px;box-shadow:0 12px 50px #102c3b66}
+.worldPanel header{display:flex;align-items:center;justify-content:space-between;gap:20px}
+.worldPanel h2{margin:0;font-size:32px}
+.worldPanel p{font-size:18px;line-height:1.4}
+.worldPanel input{box-sizing:border-box;width:100%;font:inherit;font-size:22px;padding:12px;border:2px solid #567f77;border-radius:10px;background:white;color:#203b3a}
+.worldPanel label{display:block;font-size:20px;margin:16px 0 8px}
+#worldList{display:grid;gap:8px;max-height:30vh;overflow:auto;padding:4px}
+.worldRow{display:flex;justify-content:space-between;gap:16px;text-align:left;min-height:58px}
+.worldRow strong{overflow-wrap:anywhere}.worldRow span{font-size:16px}
+.worldRow[aria-pressed=true]{outline:3px solid #357e80;background:#d4ece2}
+.worldActions{display:flex;flex-wrap:wrap;gap:10px;margin-top:16px}
+.worldActions button,.worldPanel header button{font-size:18px;min-height:46px}
+#activeWorld{display:block;max-width:34ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#welcomeWorld,#worldActive{font-weight:700;overflow-wrap:anywhere}
+@media(max-width:700px){#worlds{padding:12px}.worldPanel{padding:18px}.worldActions button{flex:1 1 45%}.worldRow{flex-direction:column;gap:4px}}
+
+#welcomeSaveStatus{font-size:18px;line-height:1.4;min-height:1.4em;margin:12px 0 0}
+#welcomeSaveStatus[data-warning=true]{color:#883923;font-weight:600}

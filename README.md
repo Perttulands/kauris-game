@@ -20,7 +20,9 @@ npm run preview
 
 Open [localhost:4173](http://localhost:4173).
 
-Your world is saved automatically in this browser. Use the same browser and site address to return to it. **Create new world** on the pause screen replaces the current world, including its buildings and plants, after confirmation.
+Your worlds save automatically in this browser. Open **Worlds** on the welcome or Escape screen to name a new world, choose an existing one, rename it, or **Copy and play** before testing. Copies are separate: changing a copy leaves the original alone. **Save now** saves the current world; the screen shows its name and save status. Switching worlds first saves the one you are leaving.
+
+Use the same browser and site address to return. Worlds are stored locally, without cloud backup; clearing browser data removes them. Existing single-world saves are kept and imported automatically. If a save fails, the previous stored version is kept and a warning appears. If another tab saved the same world, reload to use that saved version; separate worlds can be played in separate tabs.
 
 ## Controls
 
