@@ -25,7 +25,7 @@ function fixture(){
  assert.ok(b);
  const c={state,feet:b.baseY,vy:-1,pos:{x:b.gx*2,z:b.gz*2},camera:{position:{x:b.gx*2,y:b.baseY+1.7,z:b.gz*2,set(x,y,z){this.x=x;this.y=y;this.z=z;}}},
  isToy:()=>false,standingPlacement,boxes:p=>buildingBoxes(p,{state}),placementClearance,touches,validateBuild,build,propBoxes,boxesOverlap,validateDelight,placeDelight,
- residents:{bodies:()=>[]},outerBodies:()=>[],marineLife:{animals:[],overlapsBuilding:()=>false},physicalSolids:()=>[],nearbyResources:()=>[],isFlower:()=>false,
+ residents:{bodies:()=>[]},outerBodies:()=>[],marineLife:{animals:[],overlapsBuilding:()=>false},physicalSolids:()=>[],naturalSolids:()=>[],nearbyResources:()=>[],isFlower:()=>false,
  plantVolume:()=>null,world:{colliders:[]},activeDiscoveries:()=>[]};
  vm.createContext(c);const source=readFileSync(new URL('../src/main.js',import.meta.url),'utf8');
  vm.runInContext(source.slice(source.indexOf('function placementStanding('),source.indexOf('function toyHint(')),c);

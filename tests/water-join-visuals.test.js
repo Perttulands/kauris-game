@@ -1,3 +1,6 @@
+import {waterPorts} from '../src/water-connections.js';
+import {waterJoinPlans} from '../src/water-geometry.js';
+import {createDelight,animateDelight} from '../src/delight-visuals.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
@@ -115,5 +118,56 @@ test('exposed water has varied staggered streamwise glints within rotated and ve
   assert.deepEqual(twin.getObjectByName('downstream-foam').position.toArray(),m.position.toArray());
   animateWaterJoin(g,{time:.3,flow:0});assert.equal(g.getObjectByName('flow').visible,false);assert.ok(g.getObjectByName('floor').visible);
   disposeWaterJoin(g);disposeWaterJoin(twin);
+ }
+});
+
+test('channel and gutter exterior walls have one dry surface and contain corner water',()=>{
+ const cases=[
+  ['cornerChannel',[-.437,.673,-.6],[0,0,1]],['splitter',[-.437,.673,-.6],[0,0,1]],
+  ['cornerChannel',[.6,.673,.437],[-1,0,0]],['splitter',[.6,.673,.437],[-1,0,0]],
+  ['gutter',[.437,.673,-.8],[0,0,1]],
+  ['cornerChannel',[.6,.712,.047],[-1,0,0]],
+ ];
+ for(const [kind,origin,direction] of cases){
+  const g=createDelight(kind);g.updateMatrixWorld(true);
+  const hits=new THREE.Raycaster(new THREE.Vector3(...origin),new THREE.Vector3(...direction)).intersectObject(g,true);
+  assert.ok(hits.length);const coincident=hits.filter(h=>Math.abs(h.distance-hits[0].distance)<1e-6);
+  assert.equal(coincident.length,1,kind+' has overlapping external faces at '+origin);
+ }
+ for(const kind of ['cornerChannel','splitter']){
+  const g=createDelight(kind),water=g.getObjectByName('water');g.updateMatrixWorld(true);
+  if(kind==='cornerChannel')assert.ok(vertices(water).every(v=>v.x<.168),'water stays inside closing wall');
+  const hits=new THREE.Raycaster(new THREE.Vector3(.043,1,.057),new THREE.Vector3(0,-1,0)).intersectObject(water);
+  assert.equal(hits.filter(h=>Math.abs(h.distance-hits[0].distance)<1e-6).length,1,'junction water has one top face');
+ }
+});
+
+test('join cross-section and assembled corner/gutter sockets expose one stable exterior',()=>{
+ function visible(m){for(let p=m;p;p=p.parent)if(!p.visible)return false;return true;}
+ function oneSurface(g,origin,direction,label){
+  g.updateMatrixWorld(true);
+  const hits=new THREE.Raycaster(origin,direction).intersectObject(g,true).filter(h=>visible(h.object));
+  assert.ok(hits.length,label+' remains closed');
+  assert.equal(hits.filter(h=>Math.abs(h.distance-hits[0].distance)<1e-6).length,1,label+' has one exterior surface');
+ }
+ for(const [a,b,side] of [[[0,0,0],[1,0,0],{x:0,y:0,z:1}],[[0,1,0],[0,0,1],{x:-1,y:0,z:0}],[[0,2,0],[0,0,0],{x:0,y:0,z:1}]]){
+  const p=plan('trough',a,b,side),s=p.segments[0],g=createWaterJoin(p);
+  for(const t of [.017,.31,.79,.983])for(const h of [-.051,.047])for(const sign of [-1,1]){
+   const center=s.a.clone().addScaledVector(s.along,s.length*t).addScaledVector(s.up,h);
+   oneSurface(g,center.addScaledVector(s.side,sign*.5),s.side.clone().multiplyScalar(-sign),'join floor/lip');
+  }
+  disposeWaterJoin(g);
+ }
+ // The actual lower endpoint arrangement reported by the critic.
+ const a={id:20,kind:'cornerChannel',gx:-3,gz:23,rotation:3,baseY:-4.2},b={id:22,kind:'gutter',gx:-4,gz:23,rotation:2,baseY:-4.2};
+ const out=waterPorts(a).find(p=>p.name==='outlet'),into=waterPorts(b).find(p=>p.name==='inlet'),p=waterJoinPlans(a,b,out,into)[0],scene=new THREE.Group();
+ for(const prop of [a,b]){const g=createDelight(prop.kind);g.position.set(prop.gx*2,prop.baseY,prop.gz*2);g.rotation.y=prop.rotation*Math.PI/2;scene.add(g);}
+ const join=createWaterJoin(p);scene.add(join);const s=p.segments[0],along=new THREE.Vector3(s.along.x,s.along.y,s.along.z),side=new THREE.Vector3(s.side.x,s.side.y,s.side.z),up=new THREE.Vector3(s.up.x,s.up.y,s.up.z);
+ for(const flow of [0,1]){
+  animateWaterJoin(join,{time:.23,flow});for(const toy of scene.children.filter(g=>g!==join))animateDelight(toy,{flow});
+  for(const t of [-.043,.017,.071,.139,.183,.243])for(const h of [-.051,-.002,.047])for(const sign of [-1,1]){
+  const center=new THREE.Vector3(out.x,out.y,out.z).addScaledVector(along,t).addScaledVector(up,h);
+  oneSurface(scene,center.addScaledVector(side,sign*.65),side.clone().multiplyScalar(-sign),'assembled socket flow '+flow);
+  }
  }
 });

@@ -140,3 +140,17 @@ test('actual main physical water solids support reef movement queries without mi
   assert.equal(reefCeiling([b],x,z,b.minY-2),b.minY);
  }
 });
+
+test('actual main reports paid connector obstruction as object clearance and charges nothing',()=>{
+ const state=funded(),high=tower(state,1,19,2);toy(state,'pump',0,19);toy(state,'gutter',1,19,high);
+ const candidate={gx:1,gz:19,baseY:high.baseY,level:1,rotation:1,kind:'wall',material:'wood'},solids=waterReservations(state);
+ const c={state,feet:high.baseY+2.4,vy:0,pos:{x:4,z:38},camera:{position:{x:4,y:high.baseY+4.1,z:38,set(){}}},
+ isToy:()=>false,standingPlacement,boxes:p=>buildingBoxes(p,{state}),placementClearance,touches,validateBuild,build,propBoxes,boxesOverlap,validateDelight,placeDelight,
+ residents:{bodies:()=>[]},outerBodies:()=>[],marineLife:{animals:[],overlapsBuilding:()=>false},physicalSolids:()=>solids,naturalSolids:()=>[],nearbyResources:()=>[],isFlower:()=>false,
+ plantVolume:()=>null,world:{colliders:[]},activeDiscoveries:()=>[]};
+ vm.createContext(c);const source=readFileSync(new URL('../src/main.js',import.meta.url),'utf8');
+ vm.runInContext(source.slice(source.indexOf('function placementStanding('),source.indexOf('function toyHint(')),c);
+ const before=serialize(state);assert.equal(c.placementResult(candidate).code,'message.toyClearance');
+ assert.equal(c.commitPlacement(candidate).code,'message.toyClearance');assert.equal(serialize(state),before);
+ c.naturalSolids=()=>solids;assert.equal(c.placementResult(candidate).code,'message.terrainBlocked','real terrain retains its reason');
+});

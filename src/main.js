@@ -509,7 +509,8 @@ function placementResult(b){
  if(waterPlan?.rejected.some(e=>e.reason==='blocked'&&(e.from===9007199254740000||e.to===9007199254740000)))return {ok:false,code:'message.toyClearance'};
  if(b.kind==='pump'&&waterPlan&&!waterPlan.nodes.find(n=>n.id===9007199254740000)?.sourceValid)return {ok:false,code:'message.pumpBlocked'};
  if(!isToy()){
-  const code=placementClearance(b,{eye:camera.position,bodies:residents.bodies(),solids:physicalSolids(b.gx*2,b.gz*2)});if(code)return {ok:false,code};
+  // Paid join reservations are checked by validateBuild with object-clearance wording.
+  const code=placementClearance(b,{eye:camera.position,bodies:residents.bodies(),solids:naturalSolids(b.gx*2,b.gz*2)});if(code)return {ok:false,code};
   const check=(marineLife.overlapsBuilding(b)||outerBodies().some(a=>volumes.some(b=>touches(b,a.x,a.z,a.radius)&&b.maxY>a.feet&&b.minY<a.feet+a.height)))?{ok:false,code:'message.creatureRoom'}:validateBuild(state,b);
   return check.ok?{...check,landingFeet:standing.landingFeet}:check;
  }

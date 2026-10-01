@@ -97,7 +97,7 @@ function authored(kind){
  }else if(kind==='gutter'){
   // Open receiver and trough share the conservative shell box. The trough
   // interior stays visible instead of hiding water under a solid top plate.
-  const shell=spec.boxes[2];b.box({...shell,maxY:shell.minY+.045},'patina');for(const side of[-1,1])b.box({...shell,minZ:side<0?shell.minZ:shell.maxZ-.038,maxZ:side<0?shell.minZ+.038:shell.maxZ},'copper');
+  const shell=spec.boxes[2];b.box({...shell,minZ:shell.minZ+.038,maxZ:shell.maxZ-.038,maxY:shell.minY+.045},'patina');for(const side of[-1,1])b.box({...shell,minZ:side<0?shell.minZ:shell.maxZ-.038,maxZ:side<0?shell.minZ+.038:shell.maxZ},'copper');
   b.lathe('copper',[[.11,.80],[.25,.94],[.27,1.055],[.235,1.055],[.22,.955],[.09,.83]],[0,0,0]);
   b.ring('cream',.251,.018,[0,1.055,0],Math.PI/2);
   for(const z of[-.18,.18])b.add('box','copper',.24,.80,z,1.28,.13,.038);

@@ -75,7 +75,8 @@ function receiver(b,p,axis='x',r=.10){
 }
 function trough(b,x0,x1,z0,z1,y=.65,depth=.20){
   const w=x1-x0,d=z1-z0;
-  b.add('box','patina',(x0+x1)/2,y+.018,(z0+z1)/2,w,.036,d);
+  // Floor fits between rails: no patina face coplanar with outer copper.
+  b.add('box','patina',(x0+x1)/2,y+.018,(z0+z1)/2,w>d?w:w-.064,.036,w>d?d-.064:d);
   // Long sides only: physical ports stay open.
   if(w>d){
     for(const z of [z0+.016,z1-.016])b.add('box','copper',(x0+x1)/2,y+depth/2,z,w,depth,.032);
@@ -137,14 +138,14 @@ function makeFountain(root,b,spec){
 }
 function makeChannel(root,b,spec,split){
   for(const box of spec.boxes.slice(0,2))b.box(box,'wood');
-  const end=split?.9:.2;
-  b.add('box','patina',(-.9+end)/2,.668,0,end+.9,.036,.4);
+  const end=split?.9:.2,floorEnd=split?.9:.168;
+  b.add('box','patina',(-.9+floorEnd)/2,.668,0,floorEnd+.9,.036,.336);
   b.add('box','copper',(-.9+end)/2,.75,-.184,end+.9,.20,.032);
   b.add('box','copper',-.55,.75,.184,.70,.20,.032);
   if(split)b.add('box','copper',.55,.75,.184,.70,.20,.032);
-  else b.add('box','copper',.184,.75,0,.032,.20,.4);
+  else b.add('box','copper',.184,.75,0,.032,.20,.336);
   // Split rails leave the entire T/L junction open.
-  trough(b,-.2,.2,.2,.9);
+  trough(b,-.2,.2,.168,.9);
   receiver(b,spec.anchors.inlet,'x');
   if(split)receiver(b,spec.anchors.outletA,'x');
   receiver(b,split?spec.anchors.outletB:spec.anchors.outlet,'z');
@@ -152,8 +153,9 @@ function makeChannel(root,b,spec,split){
   if(split)chevron(b,.52,.698,0,0,.8);
   chevron(b,0,.698,.53,-Math.PI/2,.8);
   const water=new Batch(wet);
-  water.add('box','water',split?0:-.35,.712,0,split?1.8:1.1,.01,.25);
-  water.add('box','water',0,.712,.45,.25,.01,.9);child(root,water,'water');
+  // A disjoint T/L surface stays inside the closing wall and meets at one edge.
+  water.add('box','water',split?0:-.3875,.712,0,split?1.8:1.025,.01,.25);
+  water.add('box','water',0,.712,.5125,.25,.01,.775);child(root,water,'water');
   const pulses=new Batch(wet);
   // Three bright dashes are moved along the open portions, never beyond ports.
   pulses.add('box','foam',-.72,.722,0,.10,.006,.17);

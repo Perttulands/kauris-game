@@ -25,7 +25,8 @@ export function createWaterJoin(plan){
   const center=vec(s.a).add(vec(s.b)).multiplyScalar(.5),up=vec(s.up),side=vec(s.side),rotation=frame(s);
   segments.push({...s,rotation,startVector:vec(s.a),alongVector:vec(s.along),upVector:up,sideVector:side});
   if(plan.kind==='trough'){
-   mesh(root,box,patina,'floor',center.clone().addScaledVector(up,-plan.waterDepth-plan.floorThickness/2),[plan.width+2*plan.wallThickness,plan.floorThickness,s.length],rotation);
+   // Floor ends at the lip interiors; only copper owns the exterior side faces.
+   mesh(root,box,patina,'floor',center.clone().addScaledVector(up,-plan.waterDepth-plan.floorThickness/2),[plan.width,plan.floorThickness,s.length],rotation);
    const height=plan.wallHeight+plan.waterDepth+plan.floorThickness;
    for(const sign of [-1,1])mesh(root,box,copper,'lip',center.clone().addScaledVector(side,sign*(plan.width+plan.wallThickness)/2).addScaledVector(up,(plan.wallHeight-plan.waterDepth-plan.floorThickness)/2),[plan.wallThickness,height,s.length],rotation);
   }
