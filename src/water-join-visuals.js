@@ -7,8 +7,8 @@ const pipe=new THREE.CylinderGeometry(1,1,1,16,1,true,Math.PI/6,Math.PI*5/3);
 const core=new THREE.CylinderGeometry(1,1,1,12,1,true);
 const copper=new THREE.MeshStandardMaterial({color:'#d29862',roughness:.66,metalness:.10,side:THREE.DoubleSide});
 const patina=new THREE.MeshStandardMaterial({color:'#7ba995',roughness:.66,metalness:.10});
-const water=new THREE.MeshStandardMaterial({color:'#78cfc4',roughness:.20,metalness:.10,side:THREE.DoubleSide});
-const foam=new THREE.MeshStandardMaterial({color:'#e2f1ce',roughness:.35,emissive:'#e2f1ce',emissiveIntensity:.16});
+const water=new THREE.MeshStandardMaterial({color:'#69d7e5',roughness:.24,metalness:.02,emissive:'#278ca5',emissiveIntensity:.18,side:THREE.DoubleSide});
+const foam=new THREE.MeshStandardMaterial({color:'#c9eeed',roughness:.35,emissive:'#c9eeed',emissiveIntensity:.08});
 const rigs=new WeakMap();
 const vec=p=>new THREE.Vector3(p.x,p.y,p.z);
 function frame(s){return new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(vec(s.side),vec(s.up),vec(s.along).negate()));}
@@ -23,7 +23,7 @@ export function createWaterJoin(plan){
  for(const s of plan.segments){
   if(!(s.length>0)||![s.a,s.b,s.along,s.side,s.up].every(p=>p&&[p.x,p.y,p.z].every(Number.isFinite)))throw new TypeError('Finite planned segment basis required');
   const center=vec(s.a).add(vec(s.b)).multiplyScalar(.5),up=vec(s.up),side=vec(s.side),rotation=frame(s);
-  segments.push({...s,rotation});
+  segments.push({...s,rotation,startVector:vec(s.a),alongVector:vec(s.along),upVector:up,sideVector:side});
   if(plan.kind==='trough'){
    mesh(root,box,patina,'floor',center.clone().addScaledVector(up,-plan.waterDepth-plan.floorThickness/2),[plan.width+2*plan.wallThickness,plan.floorThickness,s.length],rotation);
    const height=plan.wallHeight+plan.waterDepth+plan.floorThickness;
@@ -40,8 +40,15 @@ export function createWaterJoin(plan){
   }else mesh(wet,box,water,'water-ribbon',center.clone().addScaledVector(up,-.002),[plan.width,.004,s.length],rotation);
  }
  const total=segments.reduce((n,s)=>n+s.length,0);
- const drops=Array.from({length:Math.max(1,Math.ceil(total/.35))},(_,i)=>{
-  const m=new THREE.Mesh(box,foam);m.name='downstream-foam';wet.add(m);return m;
+ const count=Math.max(1,Math.ceil(total/.35));
+ const drops=Array.from({length:count},(_,i)=>{
+  const m=new THREE.Mesh(box,foam);m.name='downstream-foam';wet.add(m);
+  // Uneven, staggered streamwise glints, never a row of full-width crossbars.
+  // Stable variation is prepared once; animation only changes existing transforms.
+  const seed=(i*.61803398875)%1,offset=(i+(i===0?0:(seed-.5)*.55))*total/count;
+  return {mesh:m,offset:plan.kind==='pipe'?i*total/count:offset,
+   width:plan.width*(.12+seed*.10),length:.07+((i*.38196601125)%1)*.075,
+   lateral:plan.width*(i%2===0?1:-1)*(.16+seed*.13)};
  });
  rigs.set(root,{wet,segments,total,drops,kind:plan.kind,width:plan.width,radius:plan.radius,disposed:false});
  animateWaterJoin(root,{time:0,flow:0});return root;
@@ -51,17 +58,18 @@ export function animateWaterJoin(group,{time=0,flow=0}={}){
  const rate=Number.isFinite(flow)?Math.max(0,flow):0;
  r.wet.visible=rate>0;if(!r.wet.visible||!r.total)return;
  const t=Number.isFinite(time)?time:0;
- r.drops.forEach((m,i)=>{
-  let d=((t*(.35+Math.min(rate,2)*.3)+i*r.total/r.drops.length)%r.total+r.total)%r.total;
+ for(const drop of r.drops){
+  const m=drop.mesh;
+  let d=((t*(.35+Math.min(rate,2)*.3)+drop.offset)%r.total+r.total)%r.total;
   let s=r.segments[r.segments.length-1];
   for(const candidate of r.segments){s=candidate;if(d<=s.length)break;d-=s.length;}
   // Keep the complete dash within its segment and authoritative ribbon width.
-  const length=Math.min(.055,s.length),at=Math.max(length/2,Math.min(s.length-length/2,d));
-  m.position.copy(vec(s.a)).addScaledVector(vec(s.along),at);
+  const length=Math.min(r.kind==='pipe'?.055:drop.length,s.length),at=Math.max(length/2,Math.min(s.length-length/2,d));
+  m.position.copy(s.startVector).addScaledVector(s.alongVector,at);
   if(r.kind==='pipe')m.position.addScaledVector(s.pipeOpen,r.radius*.80);
-  else m.position.addScaledVector(vec(s.up),.002);
-  m.quaternion.copy(r.kind==='pipe'?s.pipeRotation:s.rotation);m.scale.set(r.kind==='pipe'?r.radius*.65:r.width*.65,.003,length);
- });
+  else m.position.addScaledVector(s.upVector,.002).addScaledVector(s.sideVector,drop.lateral);
+  m.quaternion.copy(r.kind==='pipe'?s.pipeRotation:s.rotation);m.scale.set(r.kind==='pipe'?r.radius*.65:drop.width,.003,length);
+ }
 }
 export function disposeWaterJoin(group){
  const r=rigs.get(group);if(!r||r.disposed)return;

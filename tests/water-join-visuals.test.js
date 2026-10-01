@@ -93,3 +93,27 @@ test('pipe motion marks are exposed through the copper opening on vertical and r
   disposeWaterJoin(g);
  }
 });
+
+test('exposed water has varied staggered streamwise glints within rotated and vertical ribbons',()=>{
+ for(const [a,b,side] of [[[0,0,0],[0,4,0],{x:0,y:0,z:1}],[[2,3,1],[2,1,4],{x:-1,y:0,z:0}],[[0,0,0],[4,0,0],{x:0,y:0,z:1}]]){
+  const p=plan('trough',a,b,side),s=p.segments[0],g=createWaterJoin(p);
+  animateWaterJoin(g,{time:.13,flow:1});const marks=g.getObjectsByProperty('name','downstream-foam');
+  assert.ok(marks.length>3);assert.ok(marks.every(m=>m.scale.x<p.width*.25&&m.scale.z>m.scale.x));
+  assert.ok(new Set(marks.map(m=>m.scale.x.toFixed(5))).size>3);
+  const lateral=marks.map(m=>m.position.clone().sub(s.a).dot(s.side));
+  assert.ok(lateral.some(x=>x>0)&&lateral.some(x=>x<0));
+  const positions=marks.map(m=>m.position.clone().sub(s.a).dot(s.along)).sort((a,b)=>a-b),gaps=positions.slice(1).map((x,i)=>(x-positions[i]).toFixed(4));
+  assert.ok(new Set(gaps).size>2,'no regular rung spacing');
+  for(const m of marks)for(const v of vertices(m)){
+   const d=v.sub(s.a);assert.ok(Math.abs(d.dot(s.side))<p.width/2);
+   assert.ok(d.dot(s.along)>=-1e-7&&d.dot(s.along)<=s.length+1e-7);
+  }
+  const m=marks[0],before=m.position.clone(),geometry=m.geometry,material=m.material;
+  animateWaterJoin(g,{time:.23,flow:1});assert.ok(m.position.clone().sub(before).dot(s.along)>0);
+  assert.equal(m.geometry,geometry);assert.equal(m.material,material);
+  const twin=createWaterJoin(p);animateWaterJoin(twin,{time:.23,flow:1});
+  assert.deepEqual(twin.getObjectByName('downstream-foam').position.toArray(),m.position.toArray());
+  animateWaterJoin(g,{time:.3,flow:0});assert.equal(g.getObjectByName('flow').visible,false);assert.ok(g.getObjectByName('floor').visible);
+  disposeWaterJoin(g);disposeWaterJoin(twin);
+ }
+});

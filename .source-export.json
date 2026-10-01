@@ -1,5 +1,5 @@
 {
-  "sourceCommit": "2a5067218f51f69fa9dd20c94a75870177036607",
+  "sourceCommit": "10ce3668c9dacaddb25407ae21f0f452aa860e30",
   "files": [
     ".gitignore",
     "HOSTING.md",
@@ -473,7 +473,7 @@
     "src/water-connections.js": "702a238512ff953dfee597afdae272d82d436d772c934c637555830c3321cd4c",
     "src/water-flow.js": "2881967813fb47188b74f16593356afb067a09c33e65bd8aa3da96df39fcf81d",
     "src/water-geometry.js": "7c3cdbd3d3b0917ac651fd2823e1d1012d0b8e645e9e0cd81bd0c27f7f854e9d",
-    "src/water-join-visuals.js": "797ee42609f58543fedc7bbf53183473063d5696bb8b7736daf13f6f72bdc21e",
+    "src/water-join-visuals.js": "548165e5a78a8b9a8b5abf59f313a0e6985f53f47e01fe88d1380f0b4846f79d",
     "src/water-spec.js": "2a449fd1151a56e211d594d0d78da6a7f5e2c98342730a14dd3ea1de74986767",
     "src/water-toy-visuals.js": "950f3ef608f0221dd59f2134cf7a266047a451cecf744de43a3420a8180ced44",
     "src/whale.js": "f278f143ba0f0d52d4c58785892c05481a72c97c5048c31433998753b8113b9b",
@@ -529,7 +529,7 @@
     "tests/ui-guidance.test.js": "a83b573a5ebc8ddd3fb5b2198543697314073397412f7df37a548d357ea37b00",
     "tests/water-flow.test.js": "26895f4aa4f67d100c714abea0dbe067176ef66ffa5d520b3352dbaece919e4c",
     "tests/water-integration.test.js": "06651a90aca1dfb6568a7ab6560043bf5e9378d6080879d371ebeffc881207ae",
-    "tests/water-join-visuals.test.js": "d7d938f8c9381c3ac31366bec36435f1c1ece1b1e3948f82154fcb6b441ea46d",
+    "tests/water-join-visuals.test.js": "e23abb4c944b676e71ba04bfc62ddaf338f783662a77ccc4c02f1ecbb34b6e07",
     "tests/water-plan.test.js": "ad8fb93a9302ae660b90b13abbdcdf9a94fee127f7f10dd34197c7a805169890",
     "tests/world-runtime.test.js": "4456e7b95eae5dec796593fd096b6b3dafc1c87b8baee317db678920766f5ac7",
     "tests/world-state.test.js": "d81bd543ee96f7c41483a47814d1dbf7625fca862cdff61aebc9782d5f14dcfa"
